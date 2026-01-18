@@ -1,0 +1,160 @@
+// ========================================
+// AUTO-GENERATED FILE — DO NOT EDIT
+// ========================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+
+}
+
+
+// ========================================
+// MODULE: AUTH.PRISMA
+// ========================================
+
+//! ENUM for roles
+
+// !AuthUser
+enum AuthUserType {
+  ADMIN
+  CUSTOMER
+}
+
+//! Roles: SUPERADMIN, ADMIN, CUSTOMER
+enum Role {
+  SUPERADMIN
+  ADMIN
+}
+
+// ! ENUM for Permissions
+enum Permission {
+  MANAGE_USERS
+  MANAGE_PRODUCTS
+  MANAGE_ORDERS
+  MANAGE_PAYMENTS
+  VIEW_REPORTS
+}
+
+// ! Otp channel
+enum OtpChannel {
+  EMAIL
+  PHONE
+}
+
+// ! OTP purpose
+enum OtpPurpose {
+  VERIFY_EMAIL
+  VERIFY_PHONE
+  RESET_PASSWORD
+  TWO_FACTOR_AUTH
+  LOGIN
+  REGISTER
+}
+
+enum RateLimitAction {
+  OTP_SEND
+  OTP_VERIFY
+  LOGIN
+  REFRESH
+}
+
+// !AdminUser Model
+model Admin {
+  id            String        @id @default(cuid())
+  firstName     String
+  lastName      String
+  email         String        @unique
+  password      String
+  phone         String?
+  address       Json?
+
+  role          Role          @default(ADMIN)
+  permissions   Permission[]  @default([])
+
+  tokens        AuthToken[]
+
+  isActive      Boolean       @default(true)
+  isDeleted     Boolean       @default(false)
+  deletedAt     DateTime?
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+// !Customer Model
+model Customer {
+  id              String    @id @default(cuid())
+
+  firstName       String?
+  lastName        String?
+  email           String?   @unique
+  emailVerified   Boolean   @default(false)
+
+  phone           String    @unique
+  phoneVerified   Boolean   @default(false)
+
+  password        String?   //! NULL for guest
+
+  addresses       Json      //! required for checkout
+
+  tokens          AuthToken[]
+
+  isGuest         Boolean   @default(true)
+  isActive        Boolean   @default(true)
+  isDeleted     Boolean       @default(false)
+  deletedAt     DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// ! AuthToken Model
+
+model AuthToken {
+  id            String   @id @default(cuid())
+
+  userType      AuthUserType
+
+  adminId       String?
+  admin         Admin?    @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  customerId    String?
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  refreshHash   String
+  expiresAt     DateTime
+  revoked       Boolean  @default(false)
+
+  createdAt     DateTime @default(now())
+
+  @@index([userType])
+  @@index([adminId])
+  @@index([customerId])
+}
+
+// ! verificationOtp
+model VerificationOtp {
+  id String @id @default(cuid())
+
+  channel      OtpChannel
+  purpose      OtpPurpose
+
+  target      String    //! email or phone
+  codeHash    String
+  expiresAt   DateTime
+
+  attempts    Int       @default(0)
+  verified    Boolean   @default(false)
+
+  ipAddress   String?
+  userAgent   String?
+
+  createdAt   DateTime  @default(now())
+
+  @@index([target])
+  @@index([channel, purpose])
+}

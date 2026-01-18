@@ -1,0 +1,24 @@
+{
+  "scripts": {
+    "prisma:build": "node scripts/build-prisma-schema.js",
+    "prisma:migrate": "npm run prisma:build && prisma migrate dev",
+    "prisma:generate": "npm run prisma:build && prisma generate"
+  }
+}
+
+STEP 5: Daily Workflow (HOW YOU ACTUALLY USE THIS)
+🧑‍💻 When adding/changing models
+
+Edit a module file
+
+prisma/modules/auth.prisma
+
+
+Generate schema:
+
+npm run prisma:build
+
+
+Run migration:
+
+npm run prisma:migrate
