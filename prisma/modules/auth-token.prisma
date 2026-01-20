@@ -1,0 +1,25 @@
+//! ================================
+//! AuthToken Model
+//! ================================
+
+model AuthToken {
+  id            String   @id @default(cuid())
+
+  userType      AuthUserType
+
+  adminId       String?
+  admin         Admin?    @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  customerId    String?
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  refreshHash   String
+  expiresAt     DateTime
+  revoked       Boolean  @default(false)
+
+  createdAt     DateTime @default(now())
+
+  @@index([userType])
+  @@index([adminId])
+  @@index([customerId])
+}

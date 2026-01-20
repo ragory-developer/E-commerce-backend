@@ -8,30 +8,31 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-
 }
 
 
 // ========================================
-// MODULE: AUTH.PRISMA
+// MODULE: 00-ENUMS.PRISMA
 // ========================================
 
-//! ENUM for roles
+//! ================================
+//! GLOBAL ENUMS (single source)
+//! ================================
 
-// !AuthUser
+// ! Auth user type
 enum AuthUserType {
   ADMIN
   CUSTOMER
 }
 
-//! Roles: SUPERADMIN, ADMIN, CUSTOMER
+// ! Roles
 enum Role {
   SUPERADMIN
   ADMIN
 }
 
-// ! ENUM for Permissions
-enum Permission {
+// ! Permissions
+enum AdminPermission {
   MANAGE_USERS
   MANAGE_PRODUCTS
   MANAGE_ORDERS
@@ -39,7 +40,7 @@ enum Permission {
   VIEW_REPORTS
 }
 
-// ! Otp channel
+// ! OTP channel
 enum OtpChannel {
   EMAIL
   PHONE
@@ -55,6 +56,7 @@ enum OtpPurpose {
   REGISTER
 }
 
+// ! Rate limiting
 enum RateLimitAction {
   OTP_SEND
   OTP_VERIFY
@@ -62,7 +64,15 @@ enum RateLimitAction {
   REFRESH
 }
 
-// !AdminUser Model
+
+// ========================================
+// MODULE: ADMIN.PRISMA
+// ========================================
+
+//! ================================
+//! Admin Model
+//! ================================
+
 model Admin {
   id            String        @id @default(cuid())
   firstName     String
@@ -73,7 +83,7 @@ model Admin {
   address       Json?
 
   role          Role          @default(ADMIN)
-  permissions   Permission[]  @default([])
+  permissions Json @default("[]")
 
   tokens        AuthToken[]
 
@@ -85,34 +95,14 @@ model Admin {
   updatedAt     DateTime      @updatedAt
 }
 
-// !Customer Model
-model Customer {
-  id              String    @id @default(cuid())
 
-  firstName       String?
-  lastName        String?
-  email           String?   @unique
-  emailVerified   Boolean   @default(false)
+// ========================================
+// MODULE: AUTH-TOKEN.PRISMA
+// ========================================
 
-  phone           String    @unique
-  phoneVerified   Boolean   @default(false)
-
-  password        String?   //! NULL for guest
-
-  addresses       Json      //! required for checkout
-
-  tokens          AuthToken[]
-
-  isGuest         Boolean   @default(true)
-  isActive        Boolean   @default(true)
-  isDeleted     Boolean       @default(false)
-  deletedAt     DateTime?
-
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-}
-
-// ! AuthToken Model
+//! ================================
+//! AuthToken Model
+//! ================================
 
 model AuthToken {
   id            String   @id @default(cuid())
@@ -136,24 +126,67 @@ model AuthToken {
   @@index([customerId])
 }
 
-// ! verificationOtp
+
+// ========================================
+// MODULE: CUSTOMER.PRISMA
+// ========================================
+
+//! ================================
+//! Customer Model
+//! ================================
+
+model Customer {
+  id              String    @id @default(cuid())
+
+  firstName       String?
+  lastName        String?
+  email           String?   @unique
+  emailVerified   Boolean   @default(false)
+
+  phone           String    @unique
+  phoneVerified   Boolean   @default(false)
+
+  password        String?   //! NULL for guest
+
+  addresses       Json      //! required for checkout
+
+  tokens          AuthToken[]
+
+  isGuest         Boolean   @default(true)
+  isActive        Boolean   @default(true)
+  isDeleted       Boolean   @default(false)
+  deletedAt       DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+
+// ========================================
+// MODULE: VERIFICATION-OTP.PRISMA
+// ========================================
+
+//! ================================
+//! Verification OTP
+//! ================================
+
 model VerificationOtp {
   id String @id @default(cuid())
 
   channel      OtpChannel
   purpose      OtpPurpose
 
-  target      String    //! email or phone
-  codeHash    String
-  expiresAt   DateTime
+  target       String    //! email or phone
+  codeHash     String
+  expiresAt    DateTime
 
-  attempts    Int       @default(0)
-  verified    Boolean   @default(false)
+  attempts     Int       @default(0)
+  verified     Boolean   @default(false)
 
-  ipAddress   String?
-  userAgent   String?
+  ipAddress    String?
+  userAgent    String?
 
-  createdAt   DateTime  @default(now())
+  createdAt    DateTime  @default(now())
 
   @@index([target])
   @@index([channel, purpose])

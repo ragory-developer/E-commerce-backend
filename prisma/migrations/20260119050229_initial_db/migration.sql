@@ -5,7 +5,7 @@ CREATE TYPE "AuthUserType" AS ENUM ('ADMIN', 'CUSTOMER');
 CREATE TYPE "Role" AS ENUM ('SUPERADMIN', 'ADMIN');
 
 -- CreateEnum
-CREATE TYPE "Permission" AS ENUM ('MANAGE_USERS', 'MANAGE_PRODUCTS', 'MANAGE_ORDERS', 'MANAGE_PAYMENTS', 'VIEW_REPORTS');
+CREATE TYPE "AdminPermission" AS ENUM ('MANAGE_USERS', 'MANAGE_PRODUCTS', 'MANAGE_ORDERS', 'MANAGE_PAYMENTS', 'VIEW_REPORTS');
 
 -- CreateEnum
 CREATE TYPE "OtpChannel" AS ENUM ('EMAIL', 'PHONE');
@@ -26,7 +26,7 @@ CREATE TABLE "Admin" (
     "phone" TEXT,
     "address" JSONB,
     "role" "Role" NOT NULL DEFAULT 'ADMIN',
-    "permissions" "Permission"[] DEFAULT ARRAY[]::"Permission"[],
+    "permissions" JSONB NOT NULL DEFAULT '[]',
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "isDeleted" BOOLEAN NOT NULL DEFAULT false,
     "deletedAt" TIMESTAMP(3),
@@ -34,6 +34,20 @@ CREATE TABLE "Admin" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Admin_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "AuthToken" (
+    "id" TEXT NOT NULL,
+    "userType" "AuthUserType" NOT NULL,
+    "adminId" TEXT,
+    "customerId" TEXT,
+    "refreshHash" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "revoked" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "AuthToken_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -58,20 +72,6 @@ CREATE TABLE "Customer" (
 );
 
 -- CreateTable
-CREATE TABLE "AuthToken" (
-    "id" TEXT NOT NULL,
-    "userType" "AuthUserType" NOT NULL,
-    "adminId" TEXT,
-    "customerId" TEXT,
-    "refreshHash" TEXT NOT NULL,
-    "expiresAt" TIMESTAMP(3) NOT NULL,
-    "revoked" BOOLEAN NOT NULL DEFAULT false,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "AuthToken_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "VerificationOtp" (
     "id" TEXT NOT NULL,
     "channel" "OtpChannel" NOT NULL,
@@ -92,12 +92,6 @@ CREATE TABLE "VerificationOtp" (
 CREATE UNIQUE INDEX "Admin_email_key" ON "Admin"("email");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Customer_email_key" ON "Customer"("email");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Customer_phone_key" ON "Customer"("phone");
-
--- CreateIndex
 CREATE INDEX "AuthToken_userType_idx" ON "AuthToken"("userType");
 
 -- CreateIndex
@@ -105,6 +99,12 @@ CREATE INDEX "AuthToken_adminId_idx" ON "AuthToken"("adminId");
 
 -- CreateIndex
 CREATE INDEX "AuthToken_customerId_idx" ON "AuthToken"("customerId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Customer_email_key" ON "Customer"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Customer_phone_key" ON "Customer"("phone");
 
 -- CreateIndex
 CREATE INDEX "VerificationOtp_target_idx" ON "VerificationOtp"("target");

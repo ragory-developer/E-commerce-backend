@@ -1,0 +1,25 @@
+//! ================================
+//! Admin Model
+//! ================================
+
+model Admin {
+  id            String        @id @default(cuid())
+  firstName     String
+  lastName      String
+  email         String        @unique
+  password      String
+  phone         String?
+  address       Json?
+
+  role          Role          @default(ADMIN)
+  permissions Json @default("[]")
+
+  tokens        AuthToken[]
+
+  isActive      Boolean       @default(true)
+  isDeleted     Boolean       @default(false)
+  deletedAt     DateTime?
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}

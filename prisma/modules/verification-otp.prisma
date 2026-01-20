@@ -1,0 +1,25 @@
+//! ================================
+//! Verification OTP
+//! ================================
+
+model VerificationOtp {
+  id String @id @default(cuid())
+
+  channel      OtpChannel
+  purpose      OtpPurpose
+
+  target       String    //! email or phone
+  codeHash     String
+  expiresAt    DateTime
+
+  attempts     Int       @default(0)
+  verified     Boolean   @default(false)
+
+  ipAddress    String?
+  userAgent    String?
+
+  createdAt    DateTime  @default(now())
+
+  @@index([target])
+  @@index([channel, purpose])
+}
