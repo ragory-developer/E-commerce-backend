@@ -2,7 +2,6 @@
  * TYPESCRIPT INTERFACES
  *
  * These define the "shape" of data in our application.
- * TypeScript will check that our code matches these shapes.
  */
 
 import { AuthUserType, Permission, Role } from '@prisma/client';
@@ -11,11 +10,11 @@ import { AuthUserType, Permission, Role } from '@prisma/client';
  * Data stored inside JWT token
  */
 export interface JwtPayload {
-  sub: string; // User ID
-  email: string; // User email
-  userType: AuthUserType; // ADMIN or CUSTOMER
-  role?: Role; // SUPERADMIN or ADMIN (only for admins)
-  permissions?: Permission[]; // What they can do
+  sub: string;
+  email: string;
+  userType: AuthUserType;
+  role?: Role;
+  permissions?: Permission[];
 }
 
 /**

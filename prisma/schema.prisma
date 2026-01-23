@@ -1,5 +1,6 @@
 // ========================================
 // AUTO-GENERATED FILE — DO NOT EDIT
+// Run: npm run prisma:build
 // ========================================
 
 generator client {
@@ -12,143 +13,182 @@ datasource db {
 
 
 // ========================================
-// MODULE: 00-ENUMS.PRISMA
+// MODULE:  00-ENUMS.PRISMA
 // ========================================
 
-//! ================================
-//! GLOBAL ENUMS (single source)
-//! ================================
-
-// ! Auth user type
 enum AuthUserType {
   ADMIN
   CUSTOMER
 }
 
-// ! Roles
 enum Role {
   SUPERADMIN
   ADMIN
 }
 
-// ! Permissions
-enum AdminPermission {
+enum Permission {
+  // User Management
   MANAGE_USERS
+  VIEW_USERS
+
+  // Product Management
   MANAGE_PRODUCTS
+  VIEW_PRODUCTS
+
+  // Order Management
   MANAGE_ORDERS
+  VIEW_ORDERS
+
+  // Payment Management
   MANAGE_PAYMENTS
+  VIEW_PAYMENTS
+
+  // Reports
   VIEW_REPORTS
+  EXPORT_DATA
+
+  // Settings
+  MANAGE_SETTINGS
 }
 
-// ! OTP channel
 enum OtpChannel {
   EMAIL
-  PHONE
+  SMS
 }
 
-// ! OTP purpose
 enum OtpPurpose {
   VERIFY_EMAIL
   VERIFY_PHONE
   RESET_PASSWORD
   TWO_FACTOR_AUTH
-  LOGIN
-  REGISTER
-}
-
-// ! Rate limiting
-enum RateLimitAction {
-  OTP_SEND
-  OTP_VERIFY
-  LOGIN
-  REFRESH
+  LOGIN_OTP
 }
 
 
 // ========================================
-// MODULE: ADMIN.PRISMA
+// MODULE:  ADMIN.PRISMA
 // ========================================
-
-//! ================================
-//! Admin Model
-//! ================================
 
 model Admin {
   id            String        @id @default(cuid())
-  firstName     String
-  lastName      String
-  email         String        @unique
+
+  firstName     String        @db.VarChar(50)
+  lastName      String        @db.VarChar(50)
+  email         String        @unique @db.VarChar(255)
+  phone         String?        @db.VarChar(20)
+  avatar        String?
+
   password      String
-  phone         String?
-  address       Json?
 
   role          Role          @default(ADMIN)
-  permissions Json @default("[]")
+  permissions   Permission[]  @default([])
 
   tokens        AuthToken[]
 
   isActive      Boolean       @default(true)
   isDeleted     Boolean       @default(false)
   deletedAt     DateTime?
+  lastLoginAt   DateTime?
+  lastLoginIp   String?       @db.VarChar(45)
 
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
+  createdBy     String?
+
+  @@index([email])
+  @@index([role])
+  @@index([isActive, isDeleted])
+  @@map("admins")
 }
 
 
 // ========================================
-// MODULE: AUTH-TOKEN.PRISMA
+// MODULE:  AUDITLOG.PRISMA
 // ========================================
 
-//! ================================
-//! AuthToken Model
-//! ================================
+model AuditLog {
+  id          String   @id @default(cuid())
+
+  actorRole   Role
+  actorId     String?
+
+  action      String
+  model       String
+  recordId   String?
+
+  oldData     Json?
+  newData     Json?
+
+  ipAddress   String?
+  userAgent   String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([actorRole])
+  @@index([actorId])
+  @@index([model])
+}
+
+
+// ========================================
+// MODULE:  AUTH-TOKEN.PRISMA
+// ========================================
 
 model AuthToken {
-  id            String   @id @default(cuid())
+  id            String       @id @default(cuid())
 
   userType      AuthUserType
 
   adminId       String?
-  admin         Admin?    @relation(fields: [adminId], references: [id], onDelete: Restrict)
+  admin         Admin?       @relation(fields: [adminId], references: [id], onDelete: Restrict)
 
   customerId    String?
-  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customer      Customer?    @relation(fields: [customerId], references: [id], onDelete: Restrict)
 
-  refreshHash   String
+  tokenHash     String       @db.VarChar(255)
   expiresAt     DateTime
-  revoked       Boolean  @default(false)
 
-  createdAt     DateTime @default(now())
+  revoked       Boolean      @default(false)
+  revokedAt     DateTime?
+  revokedReason String?      @db.VarChar(100)
+
+  deviceInfo    String?      @db.VarChar(255)
+  ipAddress     String?      @db.VarChar(45)
+  userAgent     String?      @db.Text
+
+  createdAt     DateTime     @default(now())
 
   @@index([userType])
   @@index([adminId])
   @@index([customerId])
+  @@index([expiresAt])
+  @@index([revoked])
+  @@map("auth_tokens")
 }
 
 
 // ========================================
-// MODULE: CUSTOMER.PRISMA
+// MODULE:  CUSTOMER.PRISMA
 // ========================================
-
-//! ================================
-//! Customer Model
-//! ================================
 
 model Customer {
   id              String    @id @default(cuid())
 
-  firstName       String?
-  lastName        String?
-  email           String?   @unique
-  emailVerified   Boolean   @default(false)
+  firstName       String?    @db.VarChar(50)
+  lastName        String?   @db.VarChar(50)
 
-  phone           String    @unique
+  email           String?    @unique @db.VarChar(255)
+  emailVerified   Boolean   @default(false)
+  phone           String    @unique @db.VarChar(20)
   phoneVerified   Boolean   @default(false)
 
-  password        String?   //! NULL for guest
+  password        String?
 
-  addresses       Json      //! required for checkout
+  avatar          String?
+  dateOfBirth     DateTime?
+  gender          String?   @db.VarChar(20)
+
+  addresses       Json      @default("[]")
 
   tokens          AuthToken[]
 
@@ -157,37 +197,47 @@ model Customer {
   isDeleted       Boolean   @default(false)
   deletedAt       DateTime?
 
+  lastLoginAt     DateTime?
+  lastLoginIp     String?   @db.VarChar(45)
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  @@index([email])
+  @@index([phone])
+  @@index([isActive, isDeleted])
+  @@map("customers")
 }
 
 
 // ========================================
-// MODULE: VERIFICATION-OTP.PRISMA
+// MODULE:  VERIFICATION-OTP.PRISMA
 // ========================================
 
-//! ================================
-//! Verification OTP
-//! ================================
-
 model VerificationOtp {
-  id String @id @default(cuid())
+  id          String      @id @default(cuid())
 
-  channel      OtpChannel
-  purpose      OtpPurpose
+  channel     OtpChannel
+  purpose     OtpPurpose
 
-  target       String    //! email or phone
-  codeHash     String
-  expiresAt    DateTime
+  target      String      @db.VarChar(255)
 
-  attempts     Int       @default(0)
-  verified     Boolean   @default(false)
+  codeHash    String      @db.VarChar(255)
+  expiresAt   DateTime
 
-  ipAddress    String?
-  userAgent    String?
+  attempts    Int         @default(0)
+  maxAttempts Int         @default(5)
 
-  createdAt    DateTime  @default(now())
+  verified    Boolean     @default(false)
+  verifiedAt  DateTime?
+
+  ipAddress   String?     @db.VarChar(45)
+  userAgent   String?     @db.Text
+
+  createdAt   DateTime    @default(now())
 
   @@index([target])
   @@index([channel, purpose])
+  @@index([expiresAt])
+  @@map("verification_otp")
 }

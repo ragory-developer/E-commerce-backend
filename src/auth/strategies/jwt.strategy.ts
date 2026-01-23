@@ -1,48 +1,48 @@
 /**
  * JWT STRATEGY
  *
- * This is how Passport.js verifies JWT tokens.
- *
- * HOW IT WORKS:
- * 1. Extract token from Authorization header
- * 2. Verify the token signature using JWT_SECRET
- * 3. If valid, call validate() method
- * 4. validate() returns the user data to attach to request
+ * Verifies JWT tokens and attaches user to request
  */
 
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { AuthUserType } from '@prisma/client';
+import { AuthUserType, Permission } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { JwtPayload, AuthenticatedUser } from '../../common/interfaces';
+import type { AuthenticatedUser } from '../../common/interfaces';
 import { ERROR_MESSAGES } from '../../common/constants';
+
+// Define payload interface locally
+interface JwtTokenPayload {
+  sub: string;
+  email: string;
+  userType: AuthUserType;
+  role?: string;
+  permissions?: string[];
+}
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
-    private configService: ConfigService,
+    configService: ConfigService,
     private prisma: PrismaService,
   ) {
+    const secret = configService.get<string>('jwt.secret');
+    if (!secret) {
+      throw new Error('JWT_SECRET is not defined in environment variables');
+    }
+
     super({
-      // Extract token from "Authorization: Bearer <token>" header
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      // Don't ignore expiration - reject expired tokens
       ignoreExpiration: false,
-      // Secret key for verification
-      secretOrKey: configService.get<string>('jwt.secret'),
+      secretOrKey: secret,
     });
   }
 
-  /**
-   * Called after token is verified.
-   * Returns the user object that will be attached to request.user
-   */
-  async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
+  async validate(payload: JwtTokenPayload): Promise<AuthenticatedUser> {
     const { sub: userId, userType } = payload;
 
-    // Validate Admin users
     if (userType === AuthUserType.ADMIN) {
       const admin = await this.prisma.admin.findUnique({
         where: { id: userId },
@@ -56,7 +56,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         },
       });
 
-      // Check if admin exists and is active
       if (!admin || admin.isDeleted || !admin.isActive) {
         throw new UnauthorizedException(ERROR_MESSAGES.USER_INACTIVE);
       }
@@ -70,7 +69,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       };
     }
 
-    // Validate Customer users
     if (userType === AuthUserType.CUSTOMER) {
       const customer = await this.prisma.customer.findUnique({
         where: { id: userId },
@@ -83,7 +81,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         },
       });
 
-      // Check if customer exists and is active
       if (!customer || customer.isDeleted || !customer.isActive) {
         throw new UnauthorizedException(ERROR_MESSAGES.USER_INACTIVE);
       }
