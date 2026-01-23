@@ -4,10 +4,10 @@ model AuthToken {
   userType      AuthUserType
 
   adminId       String?
-  admin         Admin?       @relation(fields: [adminId], references: [id], onDelete:  Cascade)
+  admin         Admin?       @relation(fields: [adminId], references: [id], onDelete: Restrict)
 
   customerId    String?
-  customer      Customer?    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer      Customer?    @relation(fields: [customerId], references: [id], onDelete: Restrict)
 
   tokenHash     String       @db.VarChar(255)
   expiresAt     DateTime

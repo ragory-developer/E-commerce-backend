@@ -12,26 +12,26 @@
 export default () => ({
   // App settings
   nodeEnv: process.env.NODE_ENV || 'development',
-  port:  parseInt(process.env.PORT, 10) || 3000,
+  port: parseInt(process.env.PORT, 10) || 3000,
 
   // Database
   database: {
-    url: process.env. DATABASE_URL,
+    url: process.env.DATABASE_URL,
   },
 
   // JWT settings
   jwt: {
     secret: process.env.JWT_SECRET,
     accessExpires: process.env.JWT_ACCESS_EXPIRES || '15m',
-    refreshExpires: process. env.JWT_REFRESH_EXPIRES || '7d',
+    refreshExpires: process.env.JWT_REFRESH_EXPIRES || '7d',
   },
 
   // Super Admin credentials (for seeding)
   superAdmin: {
-    email: process.env. SUPER_ADMIN_EMAIL || 'superadmin@company.com',
+    email: process.env.SUPER_ADMIN_EMAIL || 'superadmin@company.com',
     password: process.env.SUPER_ADMIN_PASSWORD || 'SuperAdmin@123!',
     firstName: process.env.SUPER_ADMIN_FIRST_NAME || 'Super',
-    lastName: process. env.SUPER_ADMIN_LAST_NAME || 'Admin',
+    lastName: process.env.SUPER_ADMIN_LAST_NAME || 'Admin',
   },
 
   // Security settings

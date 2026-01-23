@@ -28,7 +28,7 @@ if (! fs.existsSync(MODULES_DIR)) {
 
 const files = fs
   .readdirSync(MODULES_DIR)
-  .filter(f => f.endsWith('. prisma'))
+  .filter(f => f.endsWith('.prisma'))
   .sort();
 
 let output = header + '\n';
@@ -49,5 +49,5 @@ ${content}
 `;
 }
 
-fs.writeFileSync(OUTPUT_FILE, output. trim() + '\n');
+fs.writeFileSync(OUTPUT_FILE, output.trim() + '\n');
 console.log('✅ prisma/schema.prisma generated');

@@ -28,11 +28,7 @@ import {
   CustomerRegisterDto,
   CustomerLoginDto,
 } from './dto';
-import {
-  JwtPayload,
-  TokenPair,
-  AuthenticatedUser,
-} from '../common/interfaces';
+import { JwtPayload, TokenPair, AuthenticatedUser } from '../common/interfaces';
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../common/constants';
 
 @Injectable()
@@ -42,7 +38,7 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
-    private configService:  ConfigService,
+    private configService: ConfigService,
   ) {}
 
   // =========================================
@@ -66,7 +62,7 @@ export class AuthService {
 
     // Admin not found
     if (!admin) {
-      throw new UnauthorizedException(ERROR_MESSAGES. INVALID_CREDENTIALS);
+      throw new UnauthorizedException(ERROR_MESSAGES.INVALID_CREDENTIALS);
     }
 
     // Check if admin is active
@@ -108,10 +104,10 @@ export class AuthService {
       message: SUCCESS_MESSAGES.LOGIN_SUCCESS,
       data: {
         accessToken: tokens.accessToken,
-        refreshToken: tokens. refreshToken,
+        refreshToken: tokens.refreshToken,
         user: {
-          id: admin. id,
-          email: admin. email,
+          id: admin.id,
+          email: admin.email,
           firstName: admin.firstName,
           lastName: admin.lastName,
           role: admin.role,
@@ -140,7 +136,7 @@ export class AuthService {
 
     // Check if email already exists
     const existingAdmin = await this.prisma.admin.findUnique({
-      where: { email: dto.email. toLowerCase() },
+      where: { email: dto.email.toLowerCase() },
     });
 
     if (existingAdmin) {
@@ -152,7 +148,7 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(dto.password, saltRounds);
 
     // Create admin
-    const admin = await this.prisma. admin.create({
+    const admin = await this.prisma.admin.create({
       data: {
         firstName: dto.firstName,
         lastName: dto.lastName,
@@ -178,7 +174,7 @@ export class AuthService {
     this.logger.log(`Admin created: ${admin.email} by ${currentUser.email}`);
 
     return {
-      message: SUCCESS_MESSAGES. ADMIN_CREATED,
+      message: SUCCESS_MESSAGES.ADMIN_CREATED,
       data: admin,
     };
   }
@@ -192,7 +188,7 @@ export class AuthService {
     currentUser: AuthenticatedUser,
   ) {
     // Only SUPERADMIN can update permissions
-    if (currentUser.role !== Role. SUPERADMIN) {
+    if (currentUser.role !== Role.SUPERADMIN) {
       throw new ForbiddenException(ERROR_MESSAGES.ONLY_SUPERADMIN);
     }
 
@@ -202,7 +198,7 @@ export class AuthService {
     });
 
     if (!admin) {
-      throw new BadRequestException(ERROR_MESSAGES. USER_NOT_FOUND);
+      throw new BadRequestException(ERROR_MESSAGES.USER_NOT_FOUND);
     }
 
     // Cannot modify SUPERADMIN
@@ -218,7 +214,7 @@ export class AuthService {
         id: true,
         firstName: true,
         lastName: true,
-        email:  true,
+        email: true,
         role: true,
         permissions: true,
       },
@@ -234,13 +230,13 @@ export class AuthService {
    * Get All Admins (SuperAdmin only)
    */
   async getAllAdmins(currentUser: AuthenticatedUser) {
-    if (currentUser.role !== Role. SUPERADMIN) {
+    if (currentUser.role !== Role.SUPERADMIN) {
       throw new ForbiddenException(ERROR_MESSAGES.ONLY_SUPERADMIN);
     }
 
     const admins = await this.prisma.admin.findMany({
       where: { isDeleted: false },
-      select:  {
+      select: {
         id: true,
         firstName: true,
         lastName: true,
@@ -252,11 +248,11 @@ export class AuthService {
         lastLoginAt: true,
         createdAt: true,
       },
-      orderBy: { createdAt:  'desc' },
+      orderBy: { createdAt: 'desc' },
     });
 
     return {
-      message:  'Admins retrieved successfully',
+      message: 'Admins retrieved successfully',
       data: admins,
     };
   }
@@ -280,14 +276,14 @@ export class AuthService {
       where: { phone: dto.phone },
     });
 
-    if (existingPhone && ! existingPhone.isGuest) {
+    if (existingPhone && !existingPhone.isGuest) {
       throw new ConflictException(ERROR_MESSAGES.PHONE_EXISTS);
     }
 
     // Check if email exists (if provided)
     if (dto.email) {
-      const existingEmail = await this.prisma.customer. findUnique({
-        where:  { email: dto.email. toLowerCase() },
+      const existingEmail = await this.prisma.customer.findUnique({
+        where: { email: dto.email.toLowerCase() },
       });
 
       if (existingEmail) {
@@ -296,9 +292,11 @@ export class AuthService {
     }
 
     // Hash password if provided
-    let hashedPassword:  string | null = null;
+    let hashedPassword: string | null = null;
     if (dto.password) {
-      const saltRounds = this.configService.get<number>('security. bcryptRounds');
+      const saltRounds = this.configService.get<number>(
+        'security.bcryptRounds',
+      );
       hashedPassword = await bcrypt.hash(dto.password, saltRounds);
     }
 
@@ -308,18 +306,18 @@ export class AuthService {
     if (existingPhone && existingPhone.isGuest) {
       // Upgrade existing guest
       customer = await this.prisma.customer.update({
-        where: { id: existingPhone. id },
+        where: { id: existingPhone.id },
         data: {
-          email: dto.email?. toLowerCase(),
+          email: dto.email?.toLowerCase(),
           password: hashedPassword,
           firstName: dto.firstName,
           lastName: dto.lastName,
-          isGuest: ! dto.password, // If password provided, not a guest
+          isGuest: !dto.password, // If password provided, not a guest
         },
       });
     } else {
       // Create new customer
-      customer = await this.prisma.customer. create({
+      customer = await this.prisma.customer.create({
         data: {
           phone: dto.phone,
           email: dto.email?.toLowerCase(),
@@ -327,7 +325,7 @@ export class AuthService {
           firstName: dto.firstName,
           lastName: dto.lastName,
           addresses: [],
-          isGuest: ! dto.password,
+          isGuest: !dto.password,
         },
       });
     }
@@ -368,16 +366,16 @@ export class AuthService {
   /**
    * Customer Login
    */
-  async customerLogin(dto:  CustomerLoginDto) {
+  async customerLogin(dto: CustomerLoginDto) {
     // Find customer by email or phone
     let customer;
 
-    if (dto. email) {
+    if (dto.email) {
       customer = await this.prisma.customer.findUnique({
         where: { email: dto.email.toLowerCase() },
       });
     } else if (dto.phone) {
-      customer = await this.prisma. customer.findUnique({
+      customer = await this.prisma.customer.findUnique({
         where: { phone: dto.phone },
       });
     }
@@ -398,7 +396,10 @@ export class AuthService {
     }
 
     // Verify password
-    const isPasswordValid = await bcrypt.compare(dto.password, customer.password);
+    const isPasswordValid = await bcrypt.compare(
+      dto.password,
+      customer.password,
+    );
     if (!isPasswordValid) {
       throw new UnauthorizedException(ERROR_MESSAGES.INVALID_CREDENTIALS);
     }
@@ -418,8 +419,8 @@ export class AuthService {
     );
 
     // Update last login
-    await this. prisma.customer.update({
-      where: { id: customer. id },
+    await this.prisma.customer.update({
+      where: { id: customer.id },
       data: { lastLoginAt: new Date() },
     });
 
@@ -463,7 +464,7 @@ export class AuthService {
           userType: payload.userType,
           revoked: false,
           expiresAt: { gt: new Date() },
-          .. .(payload.userType === AuthUserType.ADMIN
+          ...(payload.userType === AuthUserType.ADMIN
             ? { adminId: payload.sub }
             : { customerId: payload.sub }),
         },
@@ -475,9 +476,9 @@ export class AuthService {
       }
 
       // Revoke old token
-      await this. prisma.authToken.update({
+      await this.prisma.authToken.update({
         where: { id: storedToken.id },
-        data: { revoked:  true, revokedAt: new Date() },
+        data: { revoked: true, revokedAt: new Date() },
       });
 
       // Generate new tokens
@@ -509,11 +510,11 @@ export class AuthService {
    * Logout - Revoke current session
    */
   async logout(userId: string, userType: AuthUserType) {
-    await this.prisma.authToken. updateMany({
+    await this.prisma.authToken.updateMany({
       where: {
         userType,
         revoked: false,
-        .. .(userType === AuthUserType. ADMIN
+        ...(userType === AuthUserType.ADMIN
           ? { adminId: userId }
           : { customerId: userId }),
       },
@@ -534,7 +535,7 @@ export class AuthService {
     await this.prisma.authToken.updateMany({
       where: {
         userType,
-        .. .(userType === AuthUserType. ADMIN
+        ...(userType === AuthUserType.ADMIN
           ? { adminId: userId }
           : { customerId: userId }),
       },
@@ -557,11 +558,11 @@ export class AuthService {
    */
   private async generateTokens(payload: JwtPayload): Promise<TokenPair> {
     const [accessToken, refreshToken] = await Promise.all([
-      this. jwtService.signAsync(payload, {
-        expiresIn: this.configService.get<string>('jwt. accessExpires'),
+      this.jwtService.signAsync(payload, {
+        expiresIn: this.configService.get<string>('jwt.accessExpires'),
       }),
       this.jwtService.signAsync(payload, {
-        expiresIn: this. configService.get<string>('jwt.refreshExpires'),
+        expiresIn: this.configService.get<string>('jwt.refreshExpires'),
       }),
     ]);
 
@@ -583,12 +584,12 @@ export class AuthService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
 
-    await this.prisma.authToken. create({
+    await this.prisma.authToken.create({
       data: {
         userType,
         tokenHash,
         expiresAt,
-        .. .(userType === AuthUserType. ADMIN
+        ...(userType === AuthUserType.ADMIN
           ? { adminId: userId }
           : { customerId: userId }),
       },
