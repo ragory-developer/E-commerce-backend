@@ -1,48 +1,47 @@
-//! ================================
-//! GLOBAL ENUMS (single source)
-//! ================================
-
-// ! Auth user type
 enum AuthUserType {
   ADMIN
   CUSTOMER
 }
 
-// ! Roles
 enum Role {
   SUPERADMIN
   ADMIN
 }
 
-// ! Permissions
-enum AdminPermission {
+enum Permission {
+  // User Management
   MANAGE_USERS
+  VIEW_USERS
+
+  // Product Management
   MANAGE_PRODUCTS
+  VIEW_PRODUCTS
+
+  // Order Management
   MANAGE_ORDERS
+  VIEW_ORDERS
+
+  // Payment Management
   MANAGE_PAYMENTS
+  VIEW_PAYMENTS
+
+  // Reports
   VIEW_REPORTS
+  EXPORT_DATA
+
+  // Settings
+  MANAGE_SETTINGS
 }
 
-// ! OTP channel
 enum OtpChannel {
   EMAIL
-  PHONE
+  SMS
 }
 
-// ! OTP purpose
 enum OtpPurpose {
   VERIFY_EMAIL
   VERIFY_PHONE
   RESET_PASSWORD
   TWO_FACTOR_AUTH
-  LOGIN
-  REGISTER
-}
-
-// ! Rate limiting
-enum RateLimitAction {
-  OTP_SEND
-  OTP_VERIFY
-  LOGIN
-  REFRESH
+  LOGIN_OTP
 }

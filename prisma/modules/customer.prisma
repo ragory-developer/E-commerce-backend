@@ -1,21 +1,21 @@
-//! ================================
-//! Customer Model
-//! ================================
-
 model Customer {
   id              String    @id @default(cuid())
 
-  firstName       String?
-  lastName        String?
-  email           String?   @unique
-  emailVerified   Boolean   @default(false)
+  firstName       String?    @db.VarChar(50)
+  lastName        String?   @db.VarChar(50)
 
-  phone           String    @unique
+  email           String?    @unique @db.VarChar(255)
+  emailVerified   Boolean   @default(false)
+  phone           String    @unique @db.VarChar(20)
   phoneVerified   Boolean   @default(false)
 
-  password        String?   //! NULL for guest
+  password        String?
 
-  addresses       Json      //! required for checkout
+  avatar          String?
+  dateOfBirth     DateTime?
+  gender          String?   @db.VarChar(20)
+
+  addresses       Json      @default("[]")
 
   tokens          AuthToken[]
 
@@ -24,6 +24,14 @@ model Customer {
   isDeleted       Boolean   @default(false)
   deletedAt       DateTime?
 
+  lastLoginAt     DateTime?
+  lastLoginIp     String?   @db.VarChar(45)
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  @@index([email])
+  @@index([phone])
+  @@index([isActive, isDeleted])
+  @@map("customers")
 }

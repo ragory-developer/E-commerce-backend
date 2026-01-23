@@ -1,77 +1,62 @@
+/**
+ * PRISMA SERVICE
+ *
+ * This is the database connection service.
+ * It extends PrismaClient, giving you access to all Prisma methods.
+ *
+ * USAGE IN OTHER SERVICES:
+ *   constructor(private prisma: PrismaService) {}
+ *
+ *   async findUser(id: string) {
+ *     return this.prisma.admin.findUnique({ where: { id } });
+ *   }
+ */
+
 import {
   Injectable,
-  Logger,
-  OnModuleDestroy,
   OnModuleInit,
+  OnModuleDestroy,
+  Logger,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
 
 @Injectable()
-export class PrismaService implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(PrismaService.name);
-  private prisma: ReturnType<typeof this.createPrismaClient>;
-  private pool: Pool;
 
   constructor() {
-    this.pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-    });
-    this.prisma = this.createPrismaClient();
-  }
-
-  private createPrismaClient() {
-    const adapter = new PrismaPg(this.pool);
-
-    return new PrismaClient({
-      adapter,
+    super({
+      // Log database queries in development
       log:
         process.env.NODE_ENV === 'development'
-          ? ['query', 'error', 'warn']
+          ? ['query', 'info', 'warn', 'error']
           : ['error'],
-    }).$extends({
-      query: {
-        $allModels: {
-          async findMany({ args, query }) {
-            const where = args?.where as any;
-            if (
-              where &&
-              'isDeleted' in where &&
-              where.isDeleted === undefined
-            ) {
-              args.where = { ...where, isDeleted: false };
-            }
-            return query(args);
-          },
-          async findFirst({ args, query }) {
-            const where = args?.where as any;
-            if (
-              where &&
-              'isDeleted' in where &&
-              where.isDeleted === undefined
-            ) {
-              args.where = { ...where, isDeleted: false };
-            }
-            return query(args);
-          },
-        },
-      },
     });
   }
 
+  /**
+   * Called when NestJS module initializes
+   * Connects to the database
+   */
   async onModuleInit() {
-    await this.prisma.$connect();
-    this.logger.log('Database connected');
+    try {
+      await this.$connect();
+      this.logger.log('✅ Database connected successfully');
+    } catch (error) {
+      this.logger.error('❌ Failed to connect to database', error);
+      throw error;
+    }
   }
 
+  /**
+   * Called when NestJS module is destroyed
+   * Disconnects from the database
+   */
   async onModuleDestroy() {
-    await this.prisma.$disconnect();
-    await this.pool.end();
-    this.logger.warn('Database disconnected');
-  }
-
-  get client() {
-    return this.prisma;
+    await this.$disconnect();
+    this.logger.log('Database disconnected');
   }
 }

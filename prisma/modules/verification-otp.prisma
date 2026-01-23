@@ -1,25 +1,27 @@
-//! ================================
-//! Verification OTP
-//! ================================
-
 model VerificationOtp {
-  id String @id @default(cuid())
+  id          String      @id @default(cuid())
 
-  channel      OtpChannel
-  purpose      OtpPurpose
+  channel     OtpChannel
+  purpose     OtpPurpose
 
-  target       String    //! email or phone
-  codeHash     String
-  expiresAt    DateTime
+  target      String      @db.VarChar(255)
 
-  attempts     Int       @default(0)
-  verified     Boolean   @default(false)
+  codeHash    String      @db.VarChar(255)
+  expiresAt   DateTime
 
-  ipAddress    String?
-  userAgent    String?
+  attempts    Int         @default(0)
+  maxAttempts Int         @default(5)
 
-  createdAt    DateTime  @default(now())
+  verified    Boolean     @default(false)
+  verifiedAt  DateTime?
+
+  ipAddress   String?     @db.VarChar(45)
+  userAgent   String?     @db.Text
+
+  createdAt   DateTime    @default(now())
 
   @@index([target])
   @@index([channel, purpose])
+  @@index([expiresAt])
+  @@map("verification_otp")
 }
