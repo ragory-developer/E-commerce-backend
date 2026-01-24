@@ -22,7 +22,8 @@
     "prisma:generate": "npm run prisma:build && prisma generate",
     "prisma:migrate": "npm run prisma:build && prisma migrate dev",
     "prisma:reset": "npm run prisma:build && prisma migrate reset",
-    "seed:superadmin": "ts-node src/prisma/seeds/superadmin.seed.ts"
+    "seed:superadmin": "ts-node src/prisma/seeds/superadmin.seed.ts",
+    "start:prod": "node dist/main.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
