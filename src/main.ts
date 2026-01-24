@@ -56,7 +56,7 @@ async function bootstrap() {
   // Swagger Setup (DEV ONLY) - FIXED
   // ----------------------------------
   const enableSwagger =
-    nodeEnv !== 'production' || process.env.ENABLE_SWAGGER === 'true';
+    nodeEnv === 'production' || process.env.ENABLE_SWAGGER === 'true';
 
   if (enableSwagger) {
     const swaggerConfig = new DocumentBuilder()
