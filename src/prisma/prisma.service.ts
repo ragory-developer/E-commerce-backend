@@ -82,4 +82,8 @@ export class PrismaService
     await this.pool.end();
     this.logger.log('Database disconnected and pool closed');
   }
+
+  async enableShutdownHooks() {
+    await this.$disconnect();
+  }
 }
