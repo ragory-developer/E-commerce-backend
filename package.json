@@ -24,7 +24,7 @@
     "prisma:deploy": "npm run prisma:build && prisma migrate deploy",
     "prisma:reset": "npm run prisma:build && prisma migrate reset",
     "seed:superadmin": "ts-node src/prisma/seeds/superadmin.seed.ts",
-    "railway:start": "npm run prisma:deploy && npm run start:prod"
+    "railway:start": "npm run build && npm run prisma:deploy && npm run start:prod"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
