@@ -32,7 +32,7 @@ import {
 import type { TokenPair, AuthenticatedUser } from '../common/interfaces';
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../common/constants';
 
-// Define JWT payload interface locally to avoid import issues
+// Define JWT payload interface locally
 interface JwtTokenPayload {
   sub: string;
   email: string;
@@ -76,10 +76,9 @@ export class AuthService {
       throw new UnauthorizedException(ERROR_MESSAGES.INVALID_CREDENTIALS);
     }
 
-    // Cast permissions to Permission[] (they are stored as Json in DB)
     const adminPermissions = admin.permissions;
 
-    const tokens = await this.generateTokens({
+    const tokens = this.generateTokens({
       sub: admin.id,
       email: admin.email,
       userType: AuthUserType.ADMIN,
@@ -174,7 +173,6 @@ export class AuthService {
 
   /**
    * Update Admin Permissions (SuperAdmin only)
-   * FIX: Accept Permission[] type instead of string[]
    */
   async updateAdminPermissions(
     adminId: string,
@@ -197,7 +195,6 @@ export class AuthService {
       throw new ForbiddenException(ERROR_MESSAGES.CANNOT_MODIFY_SUPERADMIN);
     }
 
-    // FIX: Use set to properly update the permissions array
     const updated = await this.prisma.admin.update({
       where: { id: adminId },
       data: {
@@ -285,7 +282,6 @@ export class AuthService {
       data: { isActive: false },
     });
 
-    // Revoke all tokens (force logout)
     await this.prisma.authToken.updateMany({
       where: { adminId, revoked: false },
       data: { revoked: true, revokedAt: new Date() },
@@ -353,7 +349,6 @@ export class AuthService {
       throw new ForbiddenException('Cannot delete your own account');
     }
 
-    // SOFT DELETE - Never hard delete
     await this.prisma.admin.update({
       where: { id: adminId },
       data: {
@@ -363,7 +358,6 @@ export class AuthService {
       },
     });
 
-    // Revoke all tokens
     await this.prisma.authToken.updateMany({
       where: { adminId },
       data: { revoked: true, revokedAt: new Date() },
@@ -439,7 +433,7 @@ export class AuthService {
       });
     }
 
-    const tokens = await this.generateTokens({
+    const tokens = this.generateTokens({
       sub: customer.id,
       email: customer.email || customer.phone,
       userType: AuthUserType.CUSTOMER,
@@ -508,7 +502,7 @@ export class AuthService {
       throw new UnauthorizedException(ERROR_MESSAGES.INVALID_CREDENTIALS);
     }
 
-    const tokens = await this.generateTokens({
+    const tokens = this.generateTokens({
       sub: customer.id,
       email: customer.email || customer.phone,
       userType: AuthUserType.CUSTOMER,
@@ -572,13 +566,12 @@ export class AuthService {
         throw new UnauthorizedException(ERROR_MESSAGES.TOKEN_INVALID);
       }
 
-      // Soft revoke old token
       await this.prisma.authToken.update({
         where: { id: storedToken.id },
         data: { revoked: true, revokedAt: new Date() },
       });
 
-      const tokens = await this.generateTokens({
+      const tokens = this.generateTokens({
         sub: payload.sub,
         email: payload.email,
         userType: payload.userType,
@@ -650,11 +643,11 @@ export class AuthService {
 
   /**
    * Generate Access & Refresh Tokens
-   * FIX: Convert payload to plain object and use proper expiresIn type
+   * FIX: Use expiresIn as number (seconds)
    */
-  private async generateTokens(payload: JwtTokenPayload): Promise<TokenPair> {
-    // Convert to plain object for JWT signing
-    const jwtPayload = {
+  private generateTokens(payload: JwtTokenPayload): TokenPair {
+    // Convert payload to plain object for JWT signing
+    const jwtPayload: Record<string, unknown> = {
       sub: payload.sub,
       email: payload.email,
       userType: payload.userType,
@@ -662,12 +655,16 @@ export class AuthService {
       permissions: payload.permissions,
     };
 
-    const accessExpiresIn =
+    // Get expiry times and convert to seconds
+    const accessExpiresStr =
       this.configService.get<string>('jwt.accessExpires') ?? '15m';
-    const refreshExpiresIn =
+    const refreshExpiresStr =
       this.configService.get<string>('jwt.refreshExpires') ?? '7d';
 
-    // FIX: Use sign() instead of signAsync() with expiresIn as number in seconds
+    // Convert string time to seconds (number)
+    const accessExpiresIn = this.parseTimeToSeconds(accessExpiresStr);
+    const refreshExpiresIn = this.parseTimeToSeconds(refreshExpiresStr);
+
     const accessToken = this.jwtService.sign(jwtPayload, {
       expiresIn: accessExpiresIn,
     });
@@ -677,6 +674,33 @@ export class AuthService {
     });
 
     return { accessToken, refreshToken };
+  }
+
+  /**
+   * Parse time string to seconds
+   * Examples: '15m' -> 900, '7d' -> 604800, '1h' -> 3600
+   */
+  private parseTimeToSeconds(time: string): number {
+    const match = time.match(/^(\d+)([smhd])$/);
+    if (!match) {
+      return 900; // Default 15 minutes
+    }
+
+    const value = parseInt(match[1], 10);
+    const unit = match[2];
+
+    switch (unit) {
+      case 's':
+        return value;
+      case 'm':
+        return value * 60;
+      case 'h':
+        return value * 60 * 60;
+      case 'd':
+        return value * 60 * 60 * 24;
+      default:
+        return 900;
+    }
   }
 
   /**
@@ -690,7 +714,7 @@ export class AuthService {
     const tokenHash = await bcrypt.hash(refreshToken, 4);
 
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
+    expiresAt.setDate(expiresAt.getDate() + 7);
 
     await this.prisma.authToken.create({
       data: {
