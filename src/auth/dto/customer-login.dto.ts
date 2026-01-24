@@ -34,4 +34,8 @@ export class CustomerLoginDto {
   @IsNotEmpty({ message: 'Password is required' })
   @MinLength(8)
   password: string;
+
+  @ValidateIf((o) => !o.email && !o.phone)
+  @IsNotEmpty({ message: 'Either phone or email must be provided' })
+  _requiredField?: never;
 }

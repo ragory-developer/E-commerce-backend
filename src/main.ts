@@ -1,10 +1,11 @@
 /**
- * MAIN.TS - Application Entry Point
+ * MAIN.TS - Application Entry Point (Swagger Enabled)
  */
 
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
@@ -14,11 +15,14 @@ async function bootstrap() {
   });
 
   const configService = app.get(ConfigService);
-  const port = configService.get<number>('port') ?? 3000;
+  const port = configService.get<number>('port') ?? 3001;
   const nodeEnv = configService.get<string>('nodeEnv') ?? 'development';
 
   const logger = new Logger('Bootstrap');
 
+  // ----------------------------------
+  // Security & CORS
+  // ----------------------------------
   app.use(helmet());
 
   app.enableCors({
@@ -28,8 +32,14 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
+  // ----------------------------------
+  // Global Prefix
+  // ----------------------------------
   app.setGlobalPrefix('api/v1');
 
+  // ----------------------------------
+  // Global Validation Pipe
+  // ----------------------------------
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -42,10 +52,41 @@ async function bootstrap() {
     }),
   );
 
+  // ----------------------------------
+  // Swagger Setup (DEV ONLY) - FIXED
+  // ----------------------------------
+  if (nodeEnv === 'development') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('E-commerce API')
+      .setDescription('Authentication, Admin & Customer APIs')
+      .setVersion('1.0')
+      // Fixed: Changed scheme name to match what controller expects
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          name: 'Authorization',
+          description: 'Enter JWT token',
+          in: 'header',
+        },
+        'access-token', // This name must match @ApiBearerAuth('access-token') in controllers
+      )
+      .build();
+
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+
+    logger.log(`📘 Swagger UI: http://localhost:${port}/api/docs`);
+  }
+
+  // ----------------------------------
+  // Start Server
+  // ----------------------------------
   await app.listen(port);
 
   logger.log(`🚀 Application running on: http://localhost:${port}/api/v1`);
-  logger.log(`📝 Environment: ${nodeEnv}`);
+  logger.log(`🌍 Environment: ${nodeEnv}`);
   logger.log(`🔐 Auth endpoints: http://localhost:${port}/api/v1/auth`);
 
   if (nodeEnv === 'development') {
@@ -64,6 +105,13 @@ async function bootstrap() {
     logger.log('   POST   /api/v1/auth/logout');
     logger.log('   POST   /api/v1/auth/logout-all');
     logger.log('   GET    /api/v1/auth/me');
+    logger.log('');
+    logger.log('🔑 How to use Swagger:');
+    logger.log('   1. Login via /api/v1/auth/admin/login');
+    logger.log('   2. Copy the accessToken from response');
+    logger.log('   3. Click "Authorize" button (top right)');
+    logger.log('   4. Paste token WITHOUT "Bearer " prefix');
+    logger.log('   5. Click "Authorize" then "Close"');
   }
 }
 

@@ -1,8 +1,8 @@
 /**
- * PRISMA SERVICE
+ * PRISMA SERVICE (Prisma 7 Compatible with NeonDB)
  *
  * This is the database connection service.
- * It extends PrismaClient, giving you access to all Prisma methods.
+ * Uses PostgreSQL adapter for Prisma v7 compatibility.
  *
  * USAGE IN OTHER SERVICES:
  *   constructor(private prisma: PrismaService) {}
@@ -19,6 +19,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 @Injectable()
 export class PrismaService
@@ -26,16 +28,35 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new Logger(PrismaService.name);
+  private readonly pool: Pool;
 
   constructor() {
+    // Create PostgreSQL connection pool for NeonDB
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      // NeonDB recommended settings
+      ssl:
+        process.env.NODE_ENV === 'production'
+          ? { rejectUnauthorized: false }
+          : false,
+      max: 20, // Maximum connections
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    });
+
+    // Create Prisma adapter for PostgreSQL
+    const adapter = new PrismaPg(pool);
+
     super({
+      adapter,
       // Log database queries in development
-      
       log:
         process.env.NODE_ENV === 'development'
           ? ['query', 'info', 'warn', 'error']
           : ['error'],
     });
+
+    this.pool = pool;
   }
 
   /**
@@ -54,10 +75,11 @@ export class PrismaService
 
   /**
    * Called when NestJS module is destroyed
-   * Disconnects from the database
+   * Disconnects from the database and closes pool
    */
   async onModuleDestroy() {
     await this.$disconnect();
-    this.logger.log('Database disconnected');
+    await this.pool.end();
+    this.logger.log('Database disconnected and pool closed');
   }
 }

@@ -1,13 +1,12 @@
 /**
- * AUTH SERVICE
+ * AUTH SERVICE - PRODUCTION READY V1
  *
- * Contains all authentication business logic:
- * - Login (admin & customer)
- * - Register (customer)
- * - Create admin (superadmin only)
- * - Token management
- * - Password hashing
- * - Soft delete for admin management
+ * Contains all authentication business logic with:
+ * - Secure token management with hash verification
+ * - Audit logging for sensitive operations
+ * - Transaction support for data consistency
+ * - IP address tracking
+ * - Guest-to-full customer conversion
  */
 
 import {
@@ -32,7 +31,7 @@ import {
 import type { TokenPair, AuthenticatedUser } from '../common/interfaces';
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../common/constants';
 
-// Define JWT payload interface locally
+// JWT payload interface
 interface JwtTokenPayload {
   sub: string;
   email: string;
@@ -56,9 +55,9 @@ export class AuthService {
   // =========================================
 
   /**
-   * Admin Login
+   * Admin Login with IP tracking
    */
-  async adminLogin(dto: AdminLoginDto) {
+  async adminLogin(dto: AdminLoginDto, ipAddress?: string) {
     const admin = await this.prisma.admin.findUnique({
       where: { email: dto.email.toLowerCase() },
     });
@@ -76,28 +75,31 @@ export class AuthService {
       throw new UnauthorizedException(ERROR_MESSAGES.INVALID_CREDENTIALS);
     }
 
-    const adminPermissions = admin.permissions;
-
     const tokens = this.generateTokens({
       sub: admin.id,
       email: admin.email,
       userType: AuthUserType.ADMIN,
       role: admin.role,
-      permissions: adminPermissions,
+      permissions: admin.permissions,
     });
 
     await this.saveRefreshToken(
       admin.id,
       AuthUserType.ADMIN,
       tokens.refreshToken,
+      ipAddress,
     );
 
+    // Update last login info
     await this.prisma.admin.update({
       where: { id: admin.id },
-      data: { lastLoginAt: new Date() },
+      data: {
+        lastLoginAt: new Date(),
+        lastLoginIp: ipAddress,
+      },
     });
 
-    this.logger.log(`Admin logged in: ${admin.email}`);
+    this.logger.log(`Admin logged in: ${admin.email} from ${ipAddress}`);
 
     return {
       message: SUCCESS_MESSAGES.LOGIN_SUCCESS,
@@ -117,7 +119,7 @@ export class AuthService {
   }
 
   /**
-   * Create Admin (SuperAdmin only)
+   * Create Admin (SuperAdmin only) with Audit Logging
    */
   async createAdmin(dto: CreateAdminDto, currentUser: AuthenticatedUser) {
     if (currentUser.role !== Role.SUPERADMIN) {
@@ -140,39 +142,58 @@ export class AuthService {
       this.configService.get<number>('security.bcryptRounds') ?? 12;
     const hashedPassword = await bcrypt.hash(dto.password, saltRounds);
 
-    const admin = await this.prisma.admin.create({
-      data: {
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        email: dto.email.toLowerCase(),
-        password: hashedPassword,
-        phone: dto.phone,
-        role: dto.role || Role.ADMIN,
-        permissions: dto.permissions || [],
-        createdBy: currentUser.id,
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phone: true,
-        role: true,
-        permissions: true,
-        createdAt: true,
-      },
+    // Use transaction for data consistency
+    const result = await this.prisma.$transaction(async (tx) => {
+      const admin = await tx.admin.create({
+        data: {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          email: dto.email.toLowerCase(),
+          password: hashedPassword,
+          phone: dto.phone,
+          role: dto.role || Role.ADMIN,
+          permissions: dto.permissions || [],
+          createdBy: currentUser.id,
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          role: true,
+          permissions: true,
+          createdAt: true,
+        },
+      });
+
+      // Create audit log
+      await this.createAuditLog(tx, {
+        actorRole: currentUser.role!,
+        actorId: currentUser.id,
+        action: 'CREATE_ADMIN',
+        model: 'Admin',
+        recordId: admin.id,
+        newData: {
+          email: admin.email,
+          role: admin.role,
+          permissions: admin.permissions,
+        },
+      });
+
+      return admin;
     });
 
-    this.logger.log(`Admin created: ${admin.email} by ${currentUser.email}`);
+    this.logger.log(`Admin created: ${result.email} by ${currentUser.email}`);
 
     return {
       message: SUCCESS_MESSAGES.ADMIN_CREATED,
-      data: admin,
+      data: result,
     };
   }
 
   /**
-   * Update Admin Permissions (SuperAdmin only)
+   * Update Admin Permissions with Audit Logging
    */
   async updateAdminPermissions(
     adminId: string,
@@ -195,21 +216,35 @@ export class AuthService {
       throw new ForbiddenException(ERROR_MESSAGES.CANNOT_MODIFY_SUPERADMIN);
     }
 
-    const updated = await this.prisma.admin.update({
-      where: { id: adminId },
-      data: {
-        permissions: {
-          set: permissions,
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.admin.update({
+        where: { id: adminId },
+        data: {
+          permissions: {
+            set: permissions,
+          },
         },
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        role: true,
-        permissions: true,
-      },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          role: true,
+          permissions: true,
+        },
+      });
+
+      await this.createAuditLog(tx, {
+        actorRole: currentUser.role!,
+        actorId: currentUser.id,
+        action: 'UPDATE_ADMIN_PERMISSIONS',
+        model: 'Admin',
+        recordId: adminId,
+        oldData: { permissions: admin.permissions },
+        newData: { permissions: updated.permissions },
+      });
+
+      return updated;
     });
 
     this.logger.log(
@@ -218,12 +253,12 @@ export class AuthService {
 
     return {
       message: 'Permissions updated successfully',
-      data: updated,
+      data: result,
     };
   }
 
   /**
-   * Get All Admins (SuperAdmin only) - Excludes soft deleted
+   * Get All Admins (SuperAdmin only)
    */
   async getAllAdmins(currentUser: AuthenticatedUser) {
     if (currentUser.role !== Role.SUPERADMIN) {
@@ -254,7 +289,7 @@ export class AuthService {
   }
 
   /**
-   * Disable Admin Account (SuperAdmin only) - Soft disable
+   * Disable Admin with Transaction
    */
   async disableAdmin(adminId: string, currentUser: AuthenticatedUser) {
     if (currentUser.role !== Role.SUPERADMIN) {
@@ -277,14 +312,27 @@ export class AuthService {
       throw new ForbiddenException('Cannot disable your own account');
     }
 
-    await this.prisma.admin.update({
-      where: { id: adminId },
-      data: { isActive: false },
-    });
+    // Use transaction for atomicity
+    await this.prisma.$transaction(async (tx) => {
+      await tx.admin.update({
+        where: { id: adminId },
+        data: { isActive: false },
+      });
 
-    await this.prisma.authToken.updateMany({
-      where: { adminId, revoked: false },
-      data: { revoked: true, revokedAt: new Date() },
+      await tx.authToken.updateMany({
+        where: { adminId, revoked: false },
+        data: { revoked: true, revokedAt: new Date() },
+      });
+
+      await this.createAuditLog(tx, {
+        actorRole: currentUser.role!,
+        actorId: currentUser.id,
+        action: 'DISABLE_ADMIN',
+        model: 'Admin',
+        recordId: adminId,
+        oldData: { isActive: true },
+        newData: { isActive: false },
+      });
     });
 
     this.logger.log(`Admin disabled: ${admin.email} by ${currentUser.email}`);
@@ -296,7 +344,7 @@ export class AuthService {
   }
 
   /**
-   * Enable Admin Account (SuperAdmin only)
+   * Enable Admin
    */
   async enableAdmin(adminId: string, currentUser: AuthenticatedUser) {
     if (currentUser.role !== Role.SUPERADMIN) {
@@ -311,9 +359,21 @@ export class AuthService {
       throw new BadRequestException(ERROR_MESSAGES.USER_NOT_FOUND);
     }
 
-    await this.prisma.admin.update({
-      where: { id: adminId },
-      data: { isActive: true },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.admin.update({
+        where: { id: adminId },
+        data: { isActive: true },
+      });
+
+      await this.createAuditLog(tx, {
+        actorRole: currentUser.role!,
+        actorId: currentUser.id,
+        action: 'ENABLE_ADMIN',
+        model: 'Admin',
+        recordId: adminId,
+        oldData: { isActive: false },
+        newData: { isActive: true },
+      });
     });
 
     this.logger.log(`Admin enabled: ${admin.email} by ${currentUser.email}`);
@@ -325,8 +385,7 @@ export class AuthService {
   }
 
   /**
-   * Soft Delete Admin (SuperAdmin only)
-   * Sets isDeleted = true, NEVER actually deletes the record
+   * Soft Delete Admin with Transaction
    */
   async deleteAdmin(adminId: string, currentUser: AuthenticatedUser) {
     if (currentUser.role !== Role.SUPERADMIN) {
@@ -349,18 +408,37 @@ export class AuthService {
       throw new ForbiddenException('Cannot delete your own account');
     }
 
-    await this.prisma.admin.update({
-      where: { id: adminId },
-      data: {
-        isDeleted: true,
-        isActive: false,
-        deletedAt: new Date(),
-      },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.admin.update({
+        where: { id: adminId },
+        data: {
+          isDeleted: true,
+          isActive: false,
+          deletedAt: new Date(),
+        },
+      });
 
-    await this.prisma.authToken.updateMany({
-      where: { adminId },
-      data: { revoked: true, revokedAt: new Date() },
+      await tx.authToken.updateMany({
+        where: { adminId },
+        data: { revoked: true, revokedAt: new Date() },
+      });
+
+      await this.createAuditLog(tx, {
+        actorRole: currentUser.role!,
+        actorId: currentUser.id,
+        action: 'DELETE_ADMIN',
+        model: 'Admin',
+        recordId: adminId,
+        oldData: {
+          email: admin.email,
+          isActive: admin.isActive,
+          isDeleted: false,
+        },
+        newData: {
+          isDeleted: true,
+          isActive: false,
+        },
+      });
     });
 
     this.logger.log(
@@ -378,7 +456,7 @@ export class AuthService {
   // =========================================
 
   /**
-   * Customer Registration
+   * Customer Registration with Guest Conversion
    */
   async customerRegister(dto: CustomerRegisterDto) {
     const existingPhone = await this.prisma.customer.findUnique({
@@ -389,9 +467,14 @@ export class AuthService {
       throw new ConflictException(ERROR_MESSAGES.PHONE_EXISTS);
     }
 
+    // Check email uniqueness (including for guest conversion)
     if (dto.email) {
-      const existingEmail = await this.prisma.customer.findUnique({
-        where: { email: dto.email.toLowerCase() },
+      const existingEmail = await this.prisma.customer.findFirst({
+        where: {
+          email: dto.email.toLowerCase(),
+          // Exclude current guest if converting
+          ...(existingPhone?.isGuest ? { id: { not: existingPhone.id } } : {}),
+        },
       });
 
       if (existingEmail) {
@@ -408,6 +491,7 @@ export class AuthService {
 
     let customer;
 
+    // Convert guest to full account
     if (existingPhone && existingPhone.isGuest) {
       customer = await this.prisma.customer.update({
         where: { id: existingPhone.id },
@@ -420,6 +504,7 @@ export class AuthService {
         },
       });
     } else {
+      // Create new customer
       customer = await this.prisma.customer.create({
         data: {
           phone: dto.phone,
@@ -465,9 +550,9 @@ export class AuthService {
   }
 
   /**
-   * Customer Login
+   * Customer Login with IP tracking
    */
-  async customerLogin(dto: CustomerLoginDto) {
+  async customerLogin(dto: CustomerLoginDto, ipAddress?: string) {
     let customer;
 
     if (dto.email) {
@@ -512,14 +597,19 @@ export class AuthService {
       customer.id,
       AuthUserType.CUSTOMER,
       tokens.refreshToken,
+      ipAddress,
     );
 
+    // Update last login info
     await this.prisma.customer.update({
       where: { id: customer.id },
-      data: { lastLoginAt: new Date() },
+      data: {
+        lastLoginAt: new Date(),
+        lastLoginIp: ipAddress,
+      },
     });
 
-    this.logger.log(`Customer logged in: ${customer.phone}`);
+    this.logger.log(`Customer logged in: ${customer.phone} from ${ipAddress}`);
 
     return {
       message: SUCCESS_MESSAGES.LOGIN_SUCCESS,
@@ -542,15 +632,83 @@ export class AuthService {
   // =========================================
 
   /**
-   * Refresh Tokens - Soft revoke old token, generate new
+   * Refresh Tokens with Hash Verification (SECURITY FIX)
    */
+  // async refreshTokens(refreshToken: string) {
+  //   try {
+  //     const payload = this.jwtService.verify<JwtTokenPayload>(refreshToken, {
+  //       secret: this.configService.get<string>('jwt.secret'),
+  //     });
+
+  //     // Find all non-revoked tokens for this user
+  //     const storedTokens = await this.prisma.authToken.findMany({
+  //       where: {
+  //         userType: payload.userType,
+  //         revoked: false,
+  //         expiresAt: { gt: new Date() },
+  //         ...(payload.userType === AuthUserType.ADMIN
+  //           ? { adminId: payload.sub }
+  //           : { customerId: payload.sub }),
+  //       },
+  //       orderBy: { createdAt: 'desc' },
+  //     });
+
+  //     // CRITICAL: Verify the refresh token hash matches
+  //     let validToken = null;
+  //     for (const token of storedTokens) {
+  //       const isValid = await bcrypt.compare(refreshToken, token.tokenHash);
+  //       if (isValid) {
+  //         validToken = token;
+  //         break;
+  //       }
+  //     }
+
+  //     if (!validToken) {
+  //       throw new UnauthorizedException(ERROR_MESSAGES.TOKEN_INVALID);
+  //     }
+
+  //     // Revoke old token
+  //     await this.prisma.authToken.update({
+  //       where: { id: validToken.id },
+  //       data: { revoked: true, revokedAt: new Date() },
+  //     });
+
+  //     // Generate new tokens
+  //     const tokens = this.generateTokens({
+  //       sub: payload.sub,
+  //       email: payload.email,
+  //       userType: payload.userType,
+  //       role: payload.role,
+  //       permissions: payload.permissions,
+  //     });
+
+  //     // Save new refresh token
+  //     await this.saveRefreshToken(
+  //       payload.sub,
+  //       payload.userType,
+  //       tokens.refreshToken,
+  //     );
+
+  //     return {
+  //       message: 'Tokens refreshed successfully',
+  //       data: tokens,
+  //     };
+  //   } catch (error) {
+  //     if (error instanceof UnauthorizedException) {
+  //       throw error;
+  //     }
+  //     throw new UnauthorizedException(ERROR_MESSAGES.TOKEN_INVALID);
+  //   }
+  // }
   async refreshTokens(refreshToken: string) {
     try {
+      // 1️⃣ Verify JWT signature & extract payload
       const payload = this.jwtService.verify<JwtTokenPayload>(refreshToken, {
         secret: this.configService.get<string>('jwt.secret'),
       });
 
-      const storedToken = await this.prisma.authToken.findFirst({
+      // 2️⃣ Load all active (non-revoked, non-expired) tokens for this user
+      const storedTokens = await this.prisma.authToken.findMany({
         where: {
           userType: payload.userType,
           revoked: false,
@@ -562,15 +720,31 @@ export class AuthService {
         orderBy: { createdAt: 'desc' },
       });
 
-      if (!storedToken) {
+      // 3️⃣ Find matching refresh token by bcrypt hash comparison
+      let validToken: (typeof storedTokens)[number] | null = null;
+
+      for (const token of storedTokens) {
+        const isValid = await bcrypt.compare(refreshToken, token.tokenHash);
+        if (isValid) {
+          validToken = token;
+          break;
+        }
+      }
+
+      if (!validToken) {
         throw new UnauthorizedException(ERROR_MESSAGES.TOKEN_INVALID);
       }
 
+      // 4️⃣ Revoke the old refresh token (rotation)
       await this.prisma.authToken.update({
-        where: { id: storedToken.id },
-        data: { revoked: true, revokedAt: new Date() },
+        where: { id: validToken.id },
+        data: {
+          revoked: true,
+          revokedAt: new Date(),
+        },
       });
 
+      // 5️⃣ Generate new access & refresh tokens
       const tokens = this.generateTokens({
         sub: payload.sub,
         email: payload.email,
@@ -579,6 +753,7 @@ export class AuthService {
         permissions: payload.permissions,
       });
 
+      // 6️⃣ Store the new refresh token (hashed)
       await this.saveRefreshToken(
         payload.sub,
         payload.userType,
@@ -589,13 +764,16 @@ export class AuthService {
         message: 'Tokens refreshed successfully',
         data: tokens,
       };
-    } catch {
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException(ERROR_MESSAGES.TOKEN_INVALID);
     }
   }
 
   /**
-   * Logout - Soft revoke current session tokens
+   * Logout current session
    */
   async logout(userId: string, userType: AuthUserType) {
     await this.prisma.authToken.updateMany({
@@ -617,7 +795,7 @@ export class AuthService {
   }
 
   /**
-   * Logout All Sessions - Soft revoke all tokens
+   * Logout all sessions
    */
   async logoutAll(userId: string, userType: AuthUserType) {
     await this.prisma.authToken.updateMany({
@@ -643,33 +821,21 @@ export class AuthService {
 
   /**
    * Generate Access & Refresh Tokens
-   * FIX: Use expiresIn as number (seconds)
    */
   private generateTokens(payload: JwtTokenPayload): TokenPair {
-    // Convert payload to plain object for JWT signing
-    const jwtPayload: Record<string, unknown> = {
-      sub: payload.sub,
-      email: payload.email,
-      userType: payload.userType,
-      role: payload.role,
-      permissions: payload.permissions,
-    };
-
-    // Get expiry times and convert to seconds
     const accessExpiresStr =
       this.configService.get<string>('jwt.accessExpires') ?? '15m';
     const refreshExpiresStr =
       this.configService.get<string>('jwt.refreshExpires') ?? '7d';
 
-    // Convert string time to seconds (number)
     const accessExpiresIn = this.parseTimeToSeconds(accessExpiresStr);
     const refreshExpiresIn = this.parseTimeToSeconds(refreshExpiresStr);
 
-    const accessToken = this.jwtService.sign(jwtPayload, {
+    const accessToken = this.jwtService.sign(payload, {
       expiresIn: accessExpiresIn,
     });
 
-    const refreshToken = this.jwtService.sign(jwtPayload, {
+    const refreshToken = this.jwtService.sign(payload, {
       expiresIn: refreshExpiresIn,
     });
 
@@ -678,7 +844,6 @@ export class AuthService {
 
   /**
    * Parse time string to seconds
-   * Examples: '15m' -> 900, '7d' -> 604800, '1h' -> 3600
    */
   private parseTimeToSeconds(time: string): number {
     const match = time.match(/^(\d+)([smhd])$/);
@@ -704,27 +869,72 @@ export class AuthService {
   }
 
   /**
-   * Save Refresh Token to Database
+   * Save Refresh Token with proper salt rounds
    */
   private async saveRefreshToken(
     userId: string,
     userType: AuthUserType,
     refreshToken: string,
+    ipAddress?: string,
   ): Promise<void> {
-    const tokenHash = await bcrypt.hash(refreshToken, 4);
+    // Use proper salt rounds from config
+    const saltRounds =
+      this.configService.get<number>('security.bcryptRounds') ?? 12;
+    const tokenHash = await bcrypt.hash(refreshToken, saltRounds);
+
+    // Calculate expiry date
+    const refreshExpiresDays =
+      this.parseTimeToSeconds(
+        this.configService.get<string>('jwt.refreshExpires') ?? '7d',
+      ) /
+      (60 * 60 * 24);
 
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    expiresAt.setDate(expiresAt.getDate() + refreshExpiresDays);
 
     await this.prisma.authToken.create({
       data: {
         userType,
         tokenHash,
         expiresAt,
+        ipAddress,
         ...(userType === AuthUserType.ADMIN
           ? { adminId: userId }
           : { customerId: userId }),
       },
     });
+  }
+
+  /**
+   * Create Audit Log Entry
+   */
+  private async createAuditLog(
+    tx: any,
+    params: {
+      actorRole: Role;
+      actorId: string;
+      action: string;
+      model: string;
+      recordId?: string;
+      oldData?: any;
+      newData?: any;
+    },
+  ) {
+    try {
+      await tx.auditLog.create({
+        data: {
+          actorRole: params.actorRole,
+          actorId: params.actorId,
+          action: params.action,
+          model: params.model,
+          recordId: params.recordId,
+          oldData: params.oldData,
+          newData: params.newData,
+        },
+      });
+    } catch (error) {
+      // Don't fail main operation if audit logging fails
+      this.logger.error('Failed to create audit log', error);
+    }
   }
 }

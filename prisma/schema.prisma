@@ -158,6 +158,7 @@ model AuthToken {
 
   createdAt     DateTime     @default(now())
 
+  @@index([tokenHash])
   @@index([userType])
   @@index([adminId])
   @@index([customerId])
