@@ -48,7 +48,7 @@ async function bootstrap() {
       transformOptions: {
         enableImplicitConversion: true,
       },
-      disableErrorMessages: nodeEnv === 'production',
+      disableErrorMessages: false,
     }),
   );
 
