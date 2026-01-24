@@ -55,29 +55,30 @@ async function bootstrap() {
   // ----------------------------------
   // Swagger Setup (DEV ONLY) - FIXED
   // ----------------------------------
-  if (nodeEnv === 'development') {
+  const enableSwagger =
+    nodeEnv !== 'production' || process.env.ENABLE_SWAGGER === 'true';
+
+  if (enableSwagger) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('E-commerce API')
       .setDescription('Authentication, Admin & Customer APIs')
       .setVersion('1.0')
-      // Fixed: Changed scheme name to match what controller expects
       .addBearerAuth(
         {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'JWT',
           name: 'Authorization',
-          description: 'Enter JWT token',
           in: 'header',
         },
-        'access-token', // This name must match @ApiBearerAuth('access-token') in controllers
+        'access-token',
       )
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);
     SwaggerModule.setup('api/docs', app, document);
 
-    logger.log(`📘 Swagger UI: http://localhost:${port}/api/docs`);
+    logger.log(`📘 Swagger UI enabled`);
   }
 
   // ----------------------------------
@@ -89,7 +90,7 @@ async function bootstrap() {
   logger.log(`🌍 Environment: ${nodeEnv}`);
   logger.log(`🔐 Auth endpoints: http://localhost:${port}/api/v1/auth`);
 
-  if (nodeEnv === 'development') {
+  if (nodeEnv === 'production') {
     logger.log('');
     logger.log('📌 Available Auth Endpoints:');
     logger.log('   POST   /api/v1/auth/admin/login');
