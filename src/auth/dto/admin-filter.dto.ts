@@ -2,7 +2,7 @@ import { IsOptional, IsEnum, IsString, IsBoolean } from 'class-validator';
 import { Role } from '@prisma/client';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { PaginationDto } from '../../auth/dto/pagination.dto';
+import { PaginationDto } from './pagination.dto';
 
 export class AdminFilterDto extends PaginationDto {
   @ApiPropertyOptional({

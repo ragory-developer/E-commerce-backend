@@ -1,18 +1,25 @@
-import { IsArray, IsEnum } from 'class-validator';
-import { Permission } from '@prisma/client';
+/**
+ * UPDATE PERMISSIONS DTO
+ */
+
+import { IsArray, IsEnum, IsNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Permission } from '@prisma/client';
 
 export class UpdatePermissionsDto {
   @ApiProperty({
-    example: [Permission.MANAGE_PRODUCTS, Permission.VIEW_REPORTS],
+    description: 'Array of permissions to assign to the admin',
     enum: Permission,
     isArray: true,
-    description: 'Array of permissions to assign to the admin',
+    example: [
+      Permission.MANAGE_PRODUCTS,
+      Permission.MANAGE_ORDERS,
+      // Permission.VIEW_ANALYTICS,
+    ],
+    type: [String],
   })
   @IsArray()
-  @IsEnum(Permission, {
-    each: true,
-    message: 'Each permission must be a valid Permission enum value',
-  })
+  @IsNotEmpty({ message: 'Permissions array cannot be empty' })
+  @IsEnum(Permission, { each: true, message: 'Invalid permission value' })
   permissions: Permission[];
 }

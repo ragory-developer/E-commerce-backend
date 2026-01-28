@@ -300,15 +300,17 @@ export class AuthService {
       await this.createAuditLog(tx, {
         actorRole: currentUser.role!,
         actorId: currentUser.id,
-        action: 'UPDATE_ADMIN_PERMISSIONS',
+        action: 'UPDATE_PERMISSIONS',
         model: 'Admin',
         recordId: adminId,
         oldData: { permissions: admin.permissions },
-        newData: { permissions: updated.permissions },
+        newData: { permissions },
       });
 
       return updated;
     });
+
+    await this.revokeAllUserTokens(adminId, AuthUserType.ADMIN);
 
     this.logger.log(
       `Admin permissions updated: ${admin.email} by ${currentUser.email}`,
@@ -321,22 +323,15 @@ export class AuthService {
   }
 
   /**
-   * Generic Admin Status Update (DRY - Don't Repeat Yourself)
-   * Handles disable, enable, and delete operations
+   * Disable Admin Account
    */
-  private async updateAdminStatus(
-    adminId: string,
-    currentUser: AuthenticatedUser,
-    action: 'DISABLE' | 'ENABLE' | 'DELETE',
-    updateData: Partial<{
-      isActive: boolean;
-      isDeleted: boolean;
-      deletedAt: Date;
-    }>,
-    shouldRevokeTokens: boolean = false,
-  ) {
+  async disableAdmin(adminId: string, currentUser: AuthenticatedUser) {
     if (currentUser.role !== Role.SUPERADMIN) {
       throw new ForbiddenException(ERROR_MESSAGES.ONLY_SUPERADMIN);
+    }
+
+    if (adminId === currentUser.id) {
+      throw new ForbiddenException('Cannot disable your own account');
     }
 
     const admin = await this.prisma.admin.findFirst({
@@ -351,83 +346,160 @@ export class AuthService {
       throw new ForbiddenException(ERROR_MESSAGES.CANNOT_MODIFY_SUPERADMIN);
     }
 
-    if (action !== 'ENABLE' && admin.id === currentUser.id) {
-      throw new ForbiddenException(
-        `Cannot ${action.toLowerCase()} your own account`,
-      );
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.admin.update({
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.admin.update({
         where: { id: adminId },
-        data: updateData,
+        data: { isActive: false },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          isActive: true,
+        },
       });
-
-      if (shouldRevokeTokens) {
-        await tx.authToken.updateMany({
-          where: { adminId, revoked: false },
-          data: { revoked: true, revokedAt: new Date() },
-        });
-      }
 
       await this.createAuditLog(tx, {
         actorRole: currentUser.role!,
         actorId: currentUser.id,
-        action: `${action}_ADMIN`,
+        action: 'DISABLE_ADMIN',
         model: 'Admin',
         recordId: adminId,
-        oldData: { isActive: admin.isActive, isDeleted: admin.isDeleted },
-        newData: updateData,
+        oldData: { isActive: admin.isActive },
+        newData: { isActive: false },
       });
+
+      return updated;
     });
 
-    this.logger.log(
-      `Admin ${action.toLowerCase()}d: ${admin.email} by ${currentUser.email}`,
-    );
+    await this.revokeAllUserTokens(adminId, AuthUserType.ADMIN);
+
+    this.logger.log(`Admin disabled: ${admin.email} by ${currentUser.email}`);
 
     return {
-      message: `Admin account ${action.toLowerCase()}d successfully`,
-      data: { adminId, email: admin.email },
+      message: 'Admin disabled successfully',
+      data: result,
     };
   }
 
   /**
-   * Disable Admin (Soft disable + revoke tokens)
-   */
-  async disableAdmin(adminId: string, currentUser: AuthenticatedUser) {
-    return this.updateAdminStatus(
-      adminId,
-      currentUser,
-      'DISABLE',
-      { isActive: false },
-      true, // Revoke all tokens
-    );
-  }
-
-  /**
-   * Enable Admin
+   * Enable Admin Account
    */
   async enableAdmin(adminId: string, currentUser: AuthenticatedUser) {
-    return this.updateAdminStatus(
-      adminId,
-      currentUser,
-      'ENABLE',
-      { isActive: true },
-      false,
-    );
+    if (currentUser.role !== Role.SUPERADMIN) {
+      throw new ForbiddenException(ERROR_MESSAGES.ONLY_SUPERADMIN);
+    }
+
+    const admin = await this.prisma.admin.findFirst({
+      where: { id: adminId, isDeleted: false },
+    });
+
+    if (!admin) {
+      throw new BadRequestException(ERROR_MESSAGES.USER_NOT_FOUND);
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.admin.update({
+        where: { id: adminId },
+        data: { isActive: true },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          isActive: true,
+        },
+      });
+
+      await this.createAuditLog(tx, {
+        actorRole: currentUser.role!,
+        actorId: currentUser.id,
+        action: 'ENABLE_ADMIN',
+        model: 'Admin',
+        recordId: adminId,
+        oldData: { isActive: admin.isActive },
+        newData: { isActive: true },
+      });
+
+      return updated;
+    });
+
+    this.logger.log(`Admin enabled: ${admin.email} by ${currentUser.email}`);
+
+    return {
+      message: 'Admin enabled successfully',
+      data: result,
+    };
   }
 
   /**
-   * Delete Admin (Soft delete + revoke tokens)
+   * Delete Admin Account (Soft Delete)
    */
   async deleteAdmin(adminId: string, currentUser: AuthenticatedUser) {
-    return this.updateAdminStatus(
-      adminId,
-      currentUser,
-      'DELETE',
-      { isDeleted: true, isActive: false, deletedAt: new Date() },
-      true, // Revoke all tokens
-    );
+    if (currentUser.role !== Role.SUPERADMIN) {
+      throw new ForbiddenException(ERROR_MESSAGES.ONLY_SUPERADMIN);
+    }
+
+    if (adminId === currentUser.id) {
+      throw new ForbiddenException('Cannot delete your own account');
+    }
+
+    const admin = await this.prisma.admin.findFirst({
+      where: { id: adminId, isDeleted: false },
+    });
+
+    if (!admin) {
+      throw new BadRequestException(ERROR_MESSAGES.USER_NOT_FOUND);
+    }
+
+    if (admin.role === Role.SUPERADMIN) {
+      throw new ForbiddenException(ERROR_MESSAGES.CANNOT_MODIFY_SUPERADMIN);
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const deleted = await tx.admin.update({
+        where: { id: adminId },
+        data: {
+          isDeleted: true,
+          isActive: false,
+          deletedAt: new Date(),
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          isDeleted: true,
+        },
+      });
+
+      await this.createAuditLog(tx, {
+        actorRole: currentUser.role!,
+        actorId: currentUser.id,
+        action: 'DELETE_ADMIN',
+        model: 'Admin',
+        recordId: adminId,
+        oldData: {
+          isDeleted: admin.isDeleted,
+          isActive: admin.isActive,
+        },
+        newData: {
+          isDeleted: true,
+          isActive: false,
+        },
+      });
+
+      return deleted;
+    });
+
+    await this.revokeAllUserTokens(adminId, AuthUserType.ADMIN);
+
+    this.logger.log(`Admin deleted: ${admin.email} by ${currentUser.email}`);
+
+    return {
+      message: 'Admin deleted successfully',
+      data: result,
+    };
   }
 
   // =========================================
@@ -435,26 +507,23 @@ export class AuthService {
   // =========================================
 
   /**
-   * Customer Registration with Guest Conversion
+   * Customer Registration with IP tracking
    */
   async customerRegister(dto: CustomerRegisterDto, ipAddress?: string) {
-    const existingPhone = await this.prisma.customer.findUnique({
+    const existingByPhone = await this.prisma.customer.findUnique({
       where: { phone: dto.phone },
     });
 
-    if (existingPhone && !existingPhone.isGuest) {
+    if (existingByPhone) {
       throw new ConflictException(ERROR_MESSAGES.PHONE_EXISTS);
     }
 
     if (dto.email) {
-      const existingEmail = await this.prisma.customer.findFirst({
-        where: {
-          email: dto.email.toLowerCase(),
-          ...(existingPhone?.isGuest ? { id: { not: existingPhone.id } } : {}),
-        },
+      const existingByEmail = await this.prisma.customer.findUnique({
+        where: { email: dto.email.toLowerCase() },
       });
 
-      if (existingEmail) {
+      if (existingByEmail) {
         throw new ConflictException(ERROR_MESSAGES.EMAIL_EXISTS);
       }
     }
@@ -466,41 +535,28 @@ export class AuthService {
       hashedPassword = await bcrypt.hash(dto.password, saltRounds);
     }
 
-    let customer;
-
-    // Convert guest to full account
-    if (existingPhone && existingPhone.isGuest) {
-      customer = await this.prisma.customer.update({
-        where: { id: existingPhone.id },
-        data: {
-          email: dto.email?.toLowerCase(),
-          password: hashedPassword,
-          firstName: dto.firstName,
-          lastName: dto.lastName,
-          isGuest: !dto.password,
-          lastLoginAt: new Date(),
-          lastLoginIp: ipAddress,
-        },
-      });
-    } else {
-      customer = await this.prisma.customer.create({
-        data: {
-          phone: dto.phone,
-          email: dto.email?.toLowerCase(),
-          password: hashedPassword,
-          firstName: dto.firstName,
-          lastName: dto.lastName,
-          addresses: [],
-          isGuest: !dto.password,
-          lastLoginAt: new Date(),
-          lastLoginIp: ipAddress,
-        },
-      });
-    }
+    const customer = await this.prisma.customer.create({
+      data: {
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        email: dto.email?.toLowerCase(),
+        phone: dto.phone,
+        password: hashedPassword,
+        lastLoginIp: ipAddress,
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        createdAt: true,
+      },
+    });
 
     const tokens = this.generateTokens({
       sub: customer.id,
-      email: customer.email || customer.phone,
+      email: customer.email!,
       userType: AuthUserType.CUSTOMER,
     });
 
@@ -518,14 +574,7 @@ export class AuthService {
       data: {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
-        user: {
-          id: customer.id,
-          email: customer.email,
-          phone: customer.phone,
-          firstName: customer.firstName,
-          lastName: customer.lastName,
-          isGuest: customer.isGuest,
-        },
+        user: customer,
       },
     };
   }
@@ -534,17 +583,14 @@ export class AuthService {
    * Customer Login with IP tracking
    */
   async customerLogin(dto: CustomerLoginDto, ipAddress?: string) {
-    let customer;
-
-    if (dto.email) {
-      customer = await this.prisma.customer.findUnique({
-        where: { email: dto.email.toLowerCase() },
-      });
-    } else if (dto.phone) {
-      customer = await this.prisma.customer.findUnique({
-        where: { phone: dto.phone },
-      });
-    }
+    const customer = await this.prisma.customer.findFirst({
+      where: {
+        OR: [
+          dto.email ? { email: dto.email.toLowerCase() } : {},
+          dto.phone ? { phone: dto.phone } : {},
+        ],
+      },
+    });
 
     if (!customer) {
       throw new UnauthorizedException(ERROR_MESSAGES.INVALID_CREDENTIALS);
@@ -556,7 +602,7 @@ export class AuthService {
 
     if (!customer.password) {
       throw new UnauthorizedException(
-        'Please complete registration by setting a password',
+        'No password set. Please register or use another login method',
       );
     }
 
@@ -589,7 +635,9 @@ export class AuthService {
       },
     });
 
-    this.logger.log(`Customer logged in: ${customer.phone} from ${ipAddress}`);
+    this.logger.log(
+      `Customer logged in: ${customer.email || customer.phone} from ${ipAddress}`,
+    );
 
     return {
       message: SUCCESS_MESSAGES.LOGIN_SUCCESS,
@@ -632,7 +680,10 @@ export class AuthService {
         orderBy: { createdAt: 'desc' },
       });
 
-      let validToken = null;
+      // FIX 1 & 2: Properly type validToken
+      type StoredToken = (typeof storedTokens)[number];
+      let validToken: StoredToken | null = null;
+
       for (const token of storedTokens) {
         const isValid = await bcrypt.compare(refreshToken, token.tokenHash);
         if (isValid) {
@@ -727,16 +778,18 @@ export class AuthService {
 
   /**
    * Change Password (Admin or Customer)
+   * FIX 3 & 4: Use explicit type narrowing instead of dynamic access
    */
   async changePassword(
     userId: string,
     userType: AuthUserType,
     dto: ChangePasswordDto,
   ) {
-    const model = userType === AuthUserType.ADMIN ? 'admin' : 'customer';
-    const user = await this.prisma[model].findUnique({
-      where: { id: userId },
-    });
+    // Fetch user based on type with proper typing
+    const user =
+      userType === AuthUserType.ADMIN
+        ? await this.prisma.admin.findUnique({ where: { id: userId } })
+        : await this.prisma.customer.findUnique({ where: { id: userId } });
 
     if (!user || user.isDeleted || !user.isActive) {
       throw new BadRequestException(ERROR_MESSAGES.USER_NOT_FOUND);
@@ -762,10 +815,18 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(dto.newPassword, saltRounds);
 
     await this.prisma.$transaction(async (tx) => {
-      await tx[model].update({
-        where: { id: userId },
-        data: { password: hashedPassword },
-      });
+      // Update password based on user type
+      if (userType === AuthUserType.ADMIN) {
+        await tx.admin.update({
+          where: { id: userId },
+          data: { password: hashedPassword },
+        });
+      } else {
+        await tx.customer.update({
+          where: { id: userId },
+          data: { password: hashedPassword },
+        });
+      }
 
       // Revoke all tokens to force re-login
       await tx.authToken.updateMany({
@@ -873,6 +934,24 @@ export class AuthService {
           ? { adminId: userId }
           : { customerId: userId }),
       },
+    });
+  }
+
+  /**
+   * Revoke all tokens for a user
+   */
+  private async revokeAllUserTokens(
+    userId: string,
+    userType: AuthUserType,
+  ): Promise<void> {
+    await this.prisma.authToken.updateMany({
+      where: {
+        userType,
+        ...(userType === AuthUserType.ADMIN
+          ? { adminId: userId }
+          : { customerId: userId }),
+      },
+      data: { revoked: true, revokedAt: new Date() },
     });
   }
 
