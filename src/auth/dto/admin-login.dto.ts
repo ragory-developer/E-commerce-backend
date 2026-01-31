@@ -8,7 +8,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export class AdminLoginDto {
   @ApiProperty({
     description: 'Admin email address',
-    example: 'admin@company.com',
+    example: 'superadmin@company.com',
     type: String,
   })
   @IsEmail({}, { message: 'Invalid email format' })
@@ -17,7 +17,7 @@ export class AdminLoginDto {
 
   @ApiProperty({
     description: 'Admin password',
-    example: 'Password@123',
+    example: 'SuperAdmin@123!',
     minLength: 8,
     type: String,
   })

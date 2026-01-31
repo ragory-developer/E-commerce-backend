@@ -28,7 +28,8 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 // App
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-
+import { CategoryModule } from './category/category.module';
+import { AttributeModule } from './attribute/attribute.module';
 @Module({
   imports: [
     // ================================
@@ -69,6 +70,8 @@ import { AppService } from './app.service';
     // ================================
     PrismaModule,
     AuthModule,
+    CategoryModule,
+    AttributeModule,
   ],
 
   controllers: [AppController],
