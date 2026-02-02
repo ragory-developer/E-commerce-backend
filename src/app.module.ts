@@ -30,6 +30,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CategoryModule } from './category/category.module';
 import { AttributeModule } from './attribute/attribute.module';
+import { BrandModule } from './brand/brand.module';
+import { TagModule } from './tag/tag.module';
 @Module({
   imports: [
     // ================================
@@ -72,6 +74,8 @@ import { AttributeModule } from './attribute/attribute.module';
     AuthModule,
     CategoryModule,
     AttributeModule,
+    BrandModule,
+    TagModule,
   ],
 
   controllers: [AppController],
