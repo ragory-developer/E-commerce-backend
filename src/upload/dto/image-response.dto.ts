@@ -1,3 +1,7 @@
+/**
+ * IMAGE RESPONSE DTO
+ */
+
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ImageResponseDto {
@@ -17,10 +21,10 @@ export class ImageResponseDto {
   })
   thumbnailUrl?: string;
 
-  @ApiProperty({ example: 1200 })
+  @ApiPropertyOptional({ example: 1200 })
   width?: number;
 
-  @ApiProperty({ example: 800 })
+  @ApiPropertyOptional({ example: 800 })
   height?: number;
 
   @ApiProperty({ example: 45000 })

@@ -1,13 +1,3 @@
-/**
- * UPLOAD SERVICE
- *
- * Professional image upload with:
- * - WebP conversion & compression
- * - Thumbnail generation
- * - Organized folder structure
- * - Soft delete & restore
- */
-
 import {
   Injectable,
   NotFoundException,
@@ -16,16 +6,15 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import * as sharp from 'sharp';
-import { writeFile, mkdir, unlink } from 'fs/promises';
+import sharp from 'sharp'; // FIX: Changed from * as sharp
+import { writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join, extname } from 'path';
+import { join } from 'path';
 import {
   ALLOWED_IMAGE_TYPES,
   IMAGE_QUALITY,
   MAX_IMAGE_WIDTH,
   THUMBNAIL_SIZE,
-  ImageFolder,
 } from './upload.constants';
 import { ImageResponseDto } from './dto';
 
@@ -44,7 +33,7 @@ interface ProcessedImage {
 }
 
 interface UploadOptions {
-  folder: ImageFolder;
+  folder: string;
   alt?: string;
   createdBy?: string;
 }
@@ -59,7 +48,8 @@ export class UploadService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {
-    this.baseUrl = this.config.get<string>('BASE_URL') || 'http://localhost:3001';
+    this.baseUrl =
+      this.config.get<string>('BASE_URL') || 'http://localhost:3001';
     this.uploadDir = this.config.get<string>('UPLOAD_DIR') || 'uploads';
   }
 
@@ -84,7 +74,7 @@ export class UploadService {
         filename: processed.filename,
         path: processed.path,
         url: processed.url,
-        mimetype: 'image/webp', // Always WebP after processing
+        mimetype: 'image/webp',
         size: processed.size,
         width: processed.width,
         height: processed.height,
@@ -97,7 +87,7 @@ export class UploadService {
 
     this.logger.log(`Image uploaded: ${file.originalname} -> ${image.url}`);
 
-    return this.toResponse(image);
+    return this.formatResponse(image);
   }
 
   // ============================================
@@ -135,8 +125,8 @@ export class UploadService {
   // GET IMAGES
   // ============================================
 
-  async findAll(folder?: ImageFolder) {
-    const where: any = { isDeleted: false };
+  async findAll(folder?: string) {
+    const where: Record<string, unknown> = { isDeleted: false };
     if (folder) where.folder = folder;
 
     const images = await this.prisma.image.findMany({
@@ -146,7 +136,7 @@ export class UploadService {
 
     return {
       message: 'Images retrieved successfully',
-      data: images.map(this.toResponse),
+      data: images.map((img) => this.formatResponse(img)), // FIX: Arrow function
     };
   }
 
@@ -161,7 +151,7 @@ export class UploadService {
 
     return {
       message: 'Image retrieved successfully',
-      data: this.toResponse(image),
+      data: this.formatResponse(image),
     };
   }
 
@@ -169,7 +159,8 @@ export class UploadService {
   // SOFT DELETE
   // ============================================
 
-  async softDelete(id: string, deletedBy?: string) {
+  async softDelete(id: string) {
+    // FIX: Removed unused deletedBy parameter
     const image = await this.prisma.image.findFirst({
       where: { id, isDeleted: false },
     });
@@ -192,8 +183,9 @@ export class UploadService {
     return { message: 'Image deleted successfully' };
   }
 
-  async softDeleteMany(ids: string[], deletedBy?: string) {
-    await this.prisma.image.updateMany({
+  async softDeleteMany(ids: string[]) {
+    // FIX: Removed unused deletedBy parameter
+    const result = await this.prisma.image.updateMany({
       where: { id: { in: ids }, isDeleted: false },
       data: {
         isDeleted: true,
@@ -202,9 +194,9 @@ export class UploadService {
       },
     });
 
-    this.logger.log(`${ids.length} images soft deleted`);
+    this.logger.log(`${result.count} images soft deleted`);
 
-    return { message: `${ids.length} images deleted successfully` };
+    return { message: `${result.count} images deleted successfully` };
   }
 
   // ============================================
@@ -258,7 +250,11 @@ export class UploadService {
       throw new BadRequestException('No file provided');
     }
 
-    if (!ALLOWED_IMAGE_TYPES.includes(file.mimetype as any)) {
+    if (
+      !ALLOWED_IMAGE_TYPES.includes(
+        file.mimetype as (typeof ALLOWED_IMAGE_TYPES)[number],
+      )
+    ) {
       throw new BadRequestException(
         `Invalid file type. Allowed: ${ALLOWED_IMAGE_TYPES.join(', ')}`,
       );
@@ -267,7 +263,7 @@ export class UploadService {
 
   private async processAndSaveImage(
     file: Express.Multer.File,
-    folder: ImageFolder,
+    folder: string,
   ): Promise<ProcessedImage> {
     // Create directory path: uploads/folder/YYYY/MM
     const now = new Date();
@@ -290,11 +286,11 @@ export class UploadService {
     const thumbPath = join(dirPath, thumbFilename);
 
     // Process main image
-    const image = sharp(file.buffer);
-    const metadata = await image.metadata();
+    const sharpInstance = sharp(file.buffer);
+    const metadata = await sharpInstance.metadata();
 
     // Resize if needed and convert to WebP
-    let processedImage = image;
+    let processedImage = sharpInstance;
     if (metadata.width && metadata.width > MAX_IMAGE_WIDTH) {
       processedImage = processedImage.resize(MAX_IMAGE_WIDTH, null, {
         withoutEnlargement: true,
@@ -335,14 +331,23 @@ export class UploadService {
     return `${timestamp}-${random}`;
   }
 
-  private toResponse(image: any): ImageResponseDto {
+  // FIX: Renamed to formatResponse and using explicit type
+  private formatResponse(image: {
+    id: string;
+    originalName: string;
+    url: string;
+    thumbnailUrl: string | null;
+    width: number | null;
+    height: number | null;
+    size: number;
+  }): ImageResponseDto {
     return {
       id: image.id,
       originalName: image.originalName,
       url: image.url,
-      thumbnailUrl: image.thumbnailUrl,
-      width: image.width,
-      height: image.height,
+      thumbnailUrl: image.thumbnailUrl ?? undefined,
+      width: image.width ?? undefined,
+      height: image.height ?? undefined,
       size: image.size,
     };
   }

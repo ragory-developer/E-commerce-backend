@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsIn, MaxLength } from 'class-validator';
-import { VALID_FOLDERS, ImageFolder } from '../upload.constants';
+import { IsOptional, IsString, IsIn, MaxLength } from 'class-validator';
+import { VALID_FOLDERS } from '../upload.constants';
 
 export class UploadQueryDto {
   @ApiPropertyOptional({
@@ -9,8 +9,9 @@ export class UploadQueryDto {
     example: 'product',
   })
   @IsOptional()
-  @IsIn(VALID_FOLDERS)
-  folder?: ImageFolder;
+  @IsString()
+  @IsIn([...VALID_FOLDERS]) // FIX: Spread to regular array
+  folder?: string;
 
   @ApiPropertyOptional({
     description: 'Alt text for SEO',

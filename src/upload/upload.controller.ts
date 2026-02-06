@@ -34,17 +34,11 @@ import { UploadService } from './upload.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import type { AuthenticatedUser } from '../common/interfaces';
-import {
-  UploadQueryDto,
-  ReorderImagesDto,
-  DeleteImagesDto,
-  ImageResponseDto,
-} from './dto';
+import { ReorderImagesDto, DeleteImagesDto } from './dto';
 import {
   MAX_FILE_SIZE,
   MAX_FILES_COUNT,
   VALID_FOLDERS,
-  ImageFolder,
 } from './upload.constants';
 
 // Multer config - memory storage for Sharp processing
@@ -135,7 +129,7 @@ export class UploadController {
       }),
     )
     file: Express.Multer.File,
-    @Query('folder') folder: ImageFolder = 'general',
+    @Query('folder') folder: string = 'general', // FIX: Use string instead of ImageFolder
     @Query('alt') alt?: string,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
@@ -189,7 +183,7 @@ export class UploadController {
   @UseInterceptors(FilesInterceptor('files', MAX_FILES_COUNT, uploadConfig))
   async uploadMultiple(
     @UploadedFiles() files: Express.Multer.File[],
-    @Query('folder') folder: ImageFolder = 'general',
+    @Query('folder') folder: string = 'general', // FIX: Use string instead of ImageFolder
     @Query('alt') alt?: string,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
@@ -217,7 +211,8 @@ export class UploadController {
   @ApiResponse({ status: 200, description: 'Images retrieved successfully' })
   @Permissions(Permission.VIEW_PRODUCTS)
   @Get()
-  findAll(@Query('folder') folder?: ImageFolder) {
+  findAll(@Query('folder') folder?: string) {
+    // FIX: Use string instead of ImageFolder
     return this.uploadService.findAll(folder);
   }
 
@@ -249,8 +244,9 @@ export class UploadController {
   @Permissions(Permission.MANAGE_PRODUCTS)
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  softDelete(@Param('id') id: string, @CurrentUser() user?: AuthenticatedUser) {
-    return this.uploadService.softDelete(id, user?.id);
+  softDelete(@Param('id') id: string) {
+    // FIX: Removed unused user parameter
+    return this.uploadService.softDelete(id);
   }
 
   // =========================================
@@ -266,11 +262,9 @@ export class UploadController {
   @Permissions(Permission.MANAGE_PRODUCTS)
   @Delete('bulk')
   @HttpCode(HttpStatus.OK)
-  softDeleteMany(
-    @Body() dto: DeleteImagesDto,
-    @CurrentUser() user?: AuthenticatedUser,
-  ) {
-    return this.uploadService.softDeleteMany(dto.imageIds, user?.id);
+  softDeleteMany(@Body() dto: DeleteImagesDto) {
+    // FIX: Removed unused user parameter
+    return this.uploadService.softDeleteMany(dto.imageIds);
   }
 
   // =========================================
