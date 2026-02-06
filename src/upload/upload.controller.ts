@@ -1,37 +1,72 @@
-/**
- * UPLOAD CONTROLLER
- * API endpoints for all file uploads
- */
-
 import {
   Controller,
+  Get,
   Post,
   Delete,
-  Body,
-  UploadedFile,
-  UseInterceptors,
-  Get,
+  Patch,
+  Param,
   Query,
+  Body,
+  UseInterceptors,
+  UploadedFile,
+  UploadedFiles,
+  HttpCode,
+  HttpStatus,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  FileTypeValidator,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
-import { UploadService } from './upload.service';
-import { UploadImageDto, DeleteFileDto } from './dto/upload.dto';
-import { multerConfig } from './config/multer.config';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiConsumes,
+  ApiBody,
+  ApiQuery,
+  ApiParam,
+} from '@nestjs/swagger';
+import { Permission } from '@prisma/client';
+import { memoryStorage } from 'multer';
 
-@ApiTags('File Upload')
+import { UploadService } from './upload.service';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
+import type { AuthenticatedUser } from '../common/interfaces';
+import {
+  UploadQueryDto,
+  ReorderImagesDto,
+  DeleteImagesDto,
+  ImageResponseDto,
+} from './dto';
+import {
+  MAX_FILE_SIZE,
+  MAX_FILES_COUNT,
+  VALID_FOLDERS,
+  ImageFolder,
+} from './upload.constants';
+
+// Multer config - memory storage for Sharp processing
+const uploadConfig = {
+  storage: memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE },
+};
+
+@ApiTags('Upload')
 @ApiBearerAuth('access-token')
 @Controller('upload')
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
-  // ========================================
-  // IMAGE UPLOAD
-  // ========================================
+  // =========================================
+  // UPLOAD SINGLE IMAGE
+  // =========================================
 
   @ApiOperation({
-    summary: 'Upload Image',
-    description: 'Upload an image file (jpg, png, webp, gif). Automatically compresses and generates thumbnails.',
+    summary: 'Upload Single Image',
+    description:
+      'Upload a single image. Automatically converts to WebP and generates thumbnail.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -41,68 +76,74 @@ export class UploadController {
         file: {
           type: 'string',
           format: 'binary',
-        },
-        category: {
-          type: 'string',
-          example: 'brands',
-          description: 'Category folder (brands, categories, products, etc.)',
-        },
-        subfolder: {
-          type: 'string',
-          example: 'logos',
-          description: 'Optional subfolder',
+          description: 'Image file (JPG, PNG, GIF, WebP)',
         },
       },
-      required: ['file', 'category'],
+      required: ['file'],
     },
+  })
+  @ApiQuery({
+    name: 'folder',
+    required: false,
+    enum: VALID_FOLDERS,
+    description: 'Folder to organize image',
+    example: 'product',
+  })
+  @ApiQuery({
+    name: 'alt',
+    required: false,
+    description: 'Alt text for SEO',
+    example: 'Red Nike Shoes',
   })
   @ApiResponse({
     status: 201,
     description: 'Image uploaded successfully',
     schema: {
       example: {
-        success: true,
         message: 'Image uploaded successfully',
         data: {
-          url: 'https://yourdomain.com/uploads/brands/brands_uuid_logo.webp',
-          filename: 'brands_uuid_logo.webp',
-          size: 45632,
-          mimetype: 'image/webp',
-          category: 'brands',
-          thumbnails: [
-            {
-              size: 'small',
-              url: 'https://yourdomain.com/uploads/brands/brands_uuid_logo_small.webp',
-              width: 150,
-              height: 150,
-            },
-            {
-              size: 'medium',
-              url: 'https://yourdomain.com/uploads/brands/brands_uuid_logo_medium.webp',
-              width: 400,
-              height: 400,
-            },
-          ],
-          metadata: {
-            width: 1200,
-            height: 800,
-            format: 'webp',
-          },
+          id: 'clxxxx123',
+          originalName: 'product.jpg',
+          url: 'https://yourdomain.com/uploads/product/2026/02/abc123.webp',
+          thumbnailUrl:
+            'https://yourdomain.com/uploads/product/2026/02/abc123-thumb.webp',
+          width: 1200,
+          height: 800,
+          size: 45000,
         },
       },
     },
   })
-  @Post('image')
-  @UseInterceptors(FileInterceptor('file', multerConfig))
-  async uploadImage(
-    @UploadedFile() file: Express.Multer.File,
-    @Body() dto: UploadImageDto,
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid file type or no file provided',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Missing MANAGE_PRODUCTS permission',
+  })
+  @Permissions(Permission.MANAGE_PRODUCTS)
+  @Post()
+  @UseInterceptors(FileInterceptor('file', uploadConfig))
+  async uploadSingle(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: MAX_FILE_SIZE }),
+          new FileTypeValidator({ fileType: /image\/(jpeg|png|gif|webp)/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+    @Query('folder') folder: ImageFolder = 'general',
+    @Query('alt') alt?: string,
+    @CurrentUser() user?: AuthenticatedUser,
   ) {
-    const result = await this.uploadService.uploadImage(
-      file,
-      dto.category,
-      dto.subfolder,
-    );
+    const result = await this.uploadService.uploadImage(file, {
+      folder,
+      alt,
+      createdBy: user?.id,
+    });
 
     return {
       message: 'Image uploaded successfully',
@@ -110,159 +151,155 @@ export class UploadController {
     };
   }
 
-  // ========================================
-  // VIDEO UPLOAD
-  // ========================================
+  // =========================================
+  // UPLOAD MULTIPLE IMAGES
+  // =========================================
 
   @ApiOperation({
-    summary: 'Upload Video',
-    description: 'Upload a video file (mp4, webm, mov, avi). Generates thumbnail automatically.',
+    summary: 'Upload Multiple Images',
+    description: `Upload up to ${MAX_FILES_COUNT} images at once. Perfect for product galleries.`,
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-        },
-        category: {
-          type: 'string',
-          example: 'products',
-          description: 'Category folder',
+        files: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          description: `Image files (max ${MAX_FILES_COUNT})`,
         },
       },
-      required: ['file', 'category'],
+      required: ['files'],
     },
   })
-  @Post('video')
-  @UseInterceptors(FileInterceptor('file', multerConfig))
-  async uploadVideo(
-    @UploadedFile() file: Express.Multer.File,
-    @Body() dto: UploadImageDto,
+  @ApiQuery({
+    name: 'folder',
+    required: false,
+    enum: VALID_FOLDERS,
+    example: 'product',
+  })
+  @ApiQuery({ name: 'alt', required: false })
+  @ApiResponse({
+    status: 201,
+    description: 'Images uploaded successfully',
+  })
+  @Permissions(Permission.MANAGE_PRODUCTS)
+  @Post('multiple')
+  @UseInterceptors(FilesInterceptor('files', MAX_FILES_COUNT, uploadConfig))
+  async uploadMultiple(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Query('folder') folder: ImageFolder = 'general',
+    @Query('alt') alt?: string,
+    @CurrentUser() user?: AuthenticatedUser,
   ) {
-    const result = await this.uploadService.uploadVideo(file, dto.category);
+    const results = await this.uploadService.uploadImages(files, {
+      folder,
+      alt,
+      createdBy: user?.id,
+    });
 
     return {
-      message: 'Video uploaded successfully',
-      data: result,
+      message: `${results.length} images uploaded successfully`,
+      data: results,
     };
   }
 
-  // ========================================
-  // DOCUMENT UPLOAD
-  // ========================================
+  // =========================================
+  // GET ALL IMAGES
+  // =========================================
 
   @ApiOperation({
-    summary: 'Upload Document',
-    description: 'Upload a document file (pdf, doc, docx).',
+    summary: 'Get All Images',
+    description: 'Get all uploaded images. Filter by folder.',
   })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-        },
-        category: {
-          type: 'string',
-          example: 'documents',
-          description: 'Category folder',
-        },
-      },
-      required: ['file', 'category'],
-    },
+  @ApiQuery({ name: 'folder', required: false, enum: VALID_FOLDERS })
+  @ApiResponse({ status: 200, description: 'Images retrieved successfully' })
+  @Permissions(Permission.VIEW_PRODUCTS)
+  @Get()
+  findAll(@Query('folder') folder?: ImageFolder) {
+    return this.uploadService.findAll(folder);
+  }
+
+  // =========================================
+  // GET IMAGE BY ID
+  // =========================================
+
+  @ApiOperation({ summary: 'Get Image by ID' })
+  @ApiParam({ name: 'id', description: 'Image ID (CUID)' })
+  @ApiResponse({ status: 200, description: 'Image retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Image not found' })
+  @Permissions(Permission.VIEW_PRODUCTS)
+  @Get(':id')
+  findById(@Param('id') id: string) {
+    return this.uploadService.findById(id);
+  }
+
+  // =========================================
+  // SOFT DELETE SINGLE
+  // =========================================
+
+  @ApiOperation({
+    summary: 'Soft Delete Image',
+    description: 'Mark image as deleted. File remains on server for recovery.',
   })
-  @Post('document')
-  @UseInterceptors(FileInterceptor('file', multerConfig))
-  async uploadDocument(
-    @UploadedFile() file: Express.Multer.File,
-    @Body() dto: UploadImageDto,
+  @ApiParam({ name: 'id', description: 'Image ID' })
+  @ApiResponse({ status: 200, description: 'Image deleted successfully' })
+  @ApiResponse({ status: 404, description: 'Image not found' })
+  @Permissions(Permission.MANAGE_PRODUCTS)
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  softDelete(@Param('id') id: string, @CurrentUser() user?: AuthenticatedUser) {
+    return this.uploadService.softDelete(id, user?.id);
+  }
+
+  // =========================================
+  // SOFT DELETE MULTIPLE
+  // =========================================
+
+  @ApiOperation({
+    summary: 'Soft Delete Multiple Images',
+    description: 'Delete multiple images at once.',
+  })
+  @ApiBody({ type: DeleteImagesDto })
+  @ApiResponse({ status: 200, description: 'Images deleted successfully' })
+  @Permissions(Permission.MANAGE_PRODUCTS)
+  @Delete('bulk')
+  @HttpCode(HttpStatus.OK)
+  softDeleteMany(
+    @Body() dto: DeleteImagesDto,
+    @CurrentUser() user?: AuthenticatedUser,
   ) {
-    const result = await this.uploadService.uploadDocument(file, dto.category);
-
-    return {
-      message: 'Document uploaded successfully',
-      data: result,
-    };
+    return this.uploadService.softDeleteMany(dto.imageIds, user?.id);
   }
 
-  // ========================================
-  // EXCEL UPLOAD
-  // ========================================
+  // =========================================
+  // RESTORE
+  // =========================================
 
-  @ApiOperation({
-    summary: 'Upload Excel/CSV',
-    description: 'Upload an Excel or CSV file for data import.',
-  })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-        },
-        category: {
-          type: 'string',
-          example: 'excel',
-          description: 'Category folder',
-        },
-      },
-      required: ['file', 'category'],
-    },
-  })
-  @Post('excel')
-  @UseInterceptors(FileInterceptor('file', multerConfig))
-  async uploadExcel(
-    @UploadedFile() file: Express.Multer.File,
-    @Body() dto: UploadImageDto,
-  ) {
-    const result = await this.uploadService.uploadExcel(file, dto.category);
-
-    return {
-      message: 'Excel file uploaded successfully',
-      data: result,
-    };
+  @ApiOperation({ summary: 'Restore Deleted Image' })
+  @ApiParam({ name: 'id', description: 'Image ID' })
+  @ApiResponse({ status: 200, description: 'Image restored successfully' })
+  @ApiResponse({ status: 404, description: 'Deleted image not found' })
+  @Permissions(Permission.MANAGE_PRODUCTS)
+  @Patch(':id/restore')
+  restore(@Param('id') id: string) {
+    return this.uploadService.restore(id);
   }
 
-  // ========================================
-  // DELETE FILE
-  // ========================================
+  // =========================================
+  // REORDER IMAGES
+  // =========================================
 
   @ApiOperation({
-    summary: 'Delete File',
-    description: 'Delete a file and its thumbnails by URL.',
+    summary: 'Reorder Images',
+    description: 'Update the display order of images (for galleries).',
   })
-  @Delete('image')
-  async deleteFile(@Body() dto: DeleteFileDto) {
-    const result = await this.uploadService.deleteFile(dto.url);
-
-    return {
-      message: 'File deleted successfully',
-      data: result,
-    };
-  }
-
-  // ========================================
-  // GET FILE INFO
-  // ========================================
-
-  @ApiOperation({
-    summary: 'Get File Info',
-    description: 'Get information about an uploaded file.',
-  })
-  @Get('info')
-  async getFileInfo(@Query('url') url: string) {
-    const result = await this.uploadService.getFileInfo(url);
-
-    return {
-      message: 'File info retrieved successfully',
-      data: result,
-    };
+  @ApiBody({ type: ReorderImagesDto })
+  @ApiResponse({ status: 200, description: 'Images reordered successfully' })
+  @Permissions(Permission.MANAGE_PRODUCTS)
+  @Patch('reorder')
+  reorder(@Body() dto: ReorderImagesDto) {
+    return this.uploadService.reorder(dto.imageIds);
   }
 }
