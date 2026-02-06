@@ -32,6 +32,7 @@ import { CategoryModule } from './category/category.module';
 import { AttributeModule } from './attribute/attribute.module';
 import { BrandModule } from './brand/brand.module';
 import { TagModule } from './tag/tag.module';
+import { UploadModule } from './upload/upload.module';
 @Module({
   imports: [
     // ================================
@@ -76,6 +77,7 @@ import { TagModule } from './tag/tag.module';
     AttributeModule,
     BrandModule,
     TagModule,
+    UploadModule,
   ],
 
   controllers: [AppController],
