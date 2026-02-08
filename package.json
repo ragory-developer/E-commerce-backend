@@ -10,7 +10,7 @@
     "npm": ">=10.0.0"
   },
   "scripts": {
-    "build": "npm run prisma:generate && nest build",
+    "build": "node scripts/build-prisma-schema.js && prisma generate && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "dev": "nest start --watch",
@@ -27,7 +27,8 @@
     "prisma:migrate": "npm run prisma:build && prisma migrate dev",
     "prisma:deploy": "npm run prisma:build && prisma migrate deploy",
     "prisma:reset": "npm run prisma:build && prisma migrate reset",
-    "seed:superadmin": "ts-node src/prisma/seeds/superadmin.seed.ts"
+    "seed:superadmin": "ts-node src/prisma/seeds/superadmin.seed.ts",
+    "railway:start": "npm run prisma:deploy && npm run start:prod"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.12",
