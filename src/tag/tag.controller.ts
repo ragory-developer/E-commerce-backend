@@ -32,7 +32,7 @@ export class TagController {
   @ApiOperation({
     summary: 'Create tag',
     description:
-      'Create a new tag with name, logo, and SEO metadata. Requires MANAGE_PRODUCTS permission.',
+      'Create a new tag with name, logo, and SEO metadata. Requires MANAGE_PRODUCTS permission.||',
   })
   @ApiResponse({
     status: 201,
