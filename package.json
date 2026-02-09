@@ -31,6 +31,7 @@
     "railway:start": "npm run prisma:deploy && npm run start:prod"
   },
   "dependencies": {
+    "@nestjs/cli": "^11.0.16",
     "@nestjs/common": "^11.1.12",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.12",
@@ -40,7 +41,6 @@
     "@nestjs/serve-static": "^5.0.4",
     "@nestjs/swagger": "^11.2.5",
     "@nestjs/throttler": "^6.5.0",
-    "@nestjs/cli": "^11.0.16",
     "@prisma/adapter-pg": "^6.19.2",
     "@prisma/client": "^6.19.2",
     "@types/sharp": "^0.31.1",
@@ -58,8 +58,8 @@
     "rxjs": "^7.8.1",
     "sharp": "^0.34.5",
     "swagger-ui-express": "^5.0.1",
-    "typescript": "^5.7.3",
-    "tsconfig-paths": "^4.2.0"
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.7.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -68,7 +68,7 @@
     "@nestjs/testing": "^11.0.1",
     "@prisma/config": "^6.19.2",
     "@types/bcryptjs": "^2.4.6",
-    "@types/express": "^5.0.0",
+    "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/multer": "^2.0.0",
     "@types/node": "^22.10.7",
